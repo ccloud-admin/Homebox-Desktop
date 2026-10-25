@@ -1,10 +1,20 @@
 name: Release
 
-# Push a tag such as v1.2.0 to build the Windows installer and publish it as a
-# GitHub release. Installed copies of Homebox Desktop find it through
+# Builds the Windows installer and publishes it as a GitHub release.
+# Installed copies of Homebox Desktop find new releases through
 # Help > Check for updates (and the daily automatic check).
+#
+# Two ways to start it:
+#   1. Actions tab > Release > Run workflow, then enter a version such as 1.2.0.
+#      The workflow creates the v1.2.0 tag itself.
+#   2. Push a tag such as v1.2.0 from the command line.
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, for example 1.2.0 (needs a matching section in CHANGELOG.md)"
+        required: true
   push:
     tags: ["v*.*.*"]
 
@@ -17,6 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Work out the version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          V="${V#v}"
+          if ! echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Version must look like 1.2.0 (got '$V')"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
@@ -27,18 +52,18 @@ jobs:
 
       - name: Build installer
         env:
+          VERSION: ${{ steps.ver.outputs.version }}
           DESKTOP_REPO: ${{ github.repository }}
-        run: |
-          export VERSION="${GITHUB_REF_NAME#v}"
-          ./scripts/build-windows.sh
+        run: ./scripts/build-windows.sh
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           NOTES=$(awk -v v="## $VERSION" 'index($0,v)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md)
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
             --title "Homebox Desktop $VERSION" \
             --notes "${NOTES:-Homebox Desktop $VERSION}" \
             "build/bin/HomeboxDesktop-Setup-$VERSION.exe" \

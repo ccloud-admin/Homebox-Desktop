@@ -58,8 +58,8 @@ So a new Homebox release reaches users **without any change to this code**. You 
 ### Publishing a new version of Homebox Desktop
 
 1. Add the changes and a `## x.y.z` section to `CHANGELOG.md`.
-2. Tag and push: `git tag v1.2.0 && git push origin v1.2.0`.
-3. The **Release** workflow builds the installer, publishes it with `SHA256SUMS.txt`, and points the app's self-update at this repository.
+2. On GitHub, open **Actions > Release > Run workflow** and enter the version (for example `1.2.0`). Pushing a `v1.2.0` tag does the same thing.
+3. The workflow builds the installer, publishes it with `SHA256SUMS.txt`, and points the app's self-update at this repository.
 
 ## Building it yourself
 
