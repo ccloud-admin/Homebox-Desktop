@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homebox</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --ink: #24231f; --muted: #6d6a62; --line: #e3e0d8;
+    --accent: #2f6f5e; --accent-ink: #ffffff; --accent-soft: #e4efe9; --danger: #a33a2c; --danger-soft: #f7e6e2;
+    --focus: #2f6f5e55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1a18; --card: #24231f; --ink: #edebe5; --muted: #a29e94; --line: #3a3832;
+      --accent: #6cbca3; --accent-ink: #10201b; --accent-soft: #233a33; --danger: #e5826f; --danger-soft: #3d2622;
+      --focus: #6cbca355;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    display: grid; place-items: center; padding: 24px 16px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 32px 28px 28px; box-shadow: 0 1px 2px #0000000a, 0 8px 24px #0000000d;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; color: var(--muted); font-weight: 600; letter-spacing: .02em; font-size: 13px; text-transform: uppercase; }
+  .brand svg { width: 28px; height: 28px; }
+  h1 { font-size: 22px; line-height: 1.25; margin: 0 0 6px; font-weight: 650; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  .msg { white-space: pre-wrap; color: var(--muted); margin: 0 0 18px; overflow-wrap: anywhere; }
+  .msg.code { font: 12px/1.45 Consolas, "Cascadia Mono", monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow: auto; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  input {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; outline: none;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; }
+  button {
+    font: inherit; font-weight: 600; border-radius: 9px; padding: 10px 14px; cursor: pointer;
+    border: 1px solid transparent; background: var(--accent); color: var(--accent-ink);
+  }
+  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+  button.link { background: none; border: none; padding: 4px 0; color: var(--accent); font-weight: 600; text-align: left; }
+  button:disabled { opacity: .6; cursor: default; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .error { background: var(--danger-soft); color: var(--danger); border-radius: 9px; padding: 9px 12px; margin-top: 14px; font-size: 13.5px; display: none; white-space: pre-wrap; }
+  .error.show { display: block; }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; margin: 22px 0 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .bar { height: 6px; background: var(--accent-soft); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .25s ease; }
+  .bar.indeterminate > i { width: 35%; animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(310%); } }
+  @media (prefers-reduced-motion: reduce) { .bar.indeterminate > i { animation: none; width: 100%; opacity: .5; } }
+  [hidden] { display: none !important; }
+  .foot { margin-top: 18px; font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<main class="card" aria-live="polite">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--accent)"/>
+      <path d="M8 12.5 16 8.5l8 4v8.3L16 24.8 8 20.8z" fill="none" stroke="var(--accent-ink)" stroke-width="1.9" stroke-linejoin="round"/>
+      <path d="M8 12.5 16 16.5l8-4M16 16.5v8.3" fill="none" stroke="var(--accent-ink)" stroke-width="1.9" stroke-linejoin="round"/>
+    </svg>
+    Homebox Desktop
+  </div>
+
+  <!-- starting / busy -->
+  <section id="v-progress" hidden>
+    <h1 id="p-title">Starting Homebox</h1>
+    <p class="msg" id="p-msg"></p>
+    <div class="bar indeterminate" id="p-bar"><i></i></div>
+  </section>
+
+  <!-- first run -->
+  <section id="v-setup" hidden>
+    <h1>Welcome to Homebox</h1>
+    <p class="lead">Create the account that owns your inventory. If you turn on network sharing later, you'll use these details to sign in from your phone.</p>
+    <form id="f-setup" autocomplete="off">
+      <label for="s-name">Your name</label>
+      <input id="s-name" required>
+      <label for="s-email">Email</label>
+      <input id="s-email" type="email" required>
+      <label for="s-pass">Password</label>
+      <input id="s-pass" type="password" minlength="6" required>
+      <label for="s-pass2">Confirm password</label>
+      <input id="s-pass2" type="password" minlength="6" required>
+      <div class="hint">At least 6 characters. Homebox Desktop remembers it securely on this PC, so you won't be asked again here.</div>
+      <div class="error" id="s-err"></div>
+      <div class="actions"><button type="submit" id="s-btn">Create my inventory</button></div>
+    </form>
+    <div class="divider">or</div>
+    <p class="lead" style="margin-bottom:10px">Moving from another PC? Restore a backup instead.</p>
+    <div class="row">
+      <button class="secondary" type="button" data-restore="folder">Backup folder…</button>
+      <button class="secondary" type="button" data-restore="zip">Zip file…</button>
+    </div>
+  </section>
+
+  <!-- sign in -->
+  <section id="v-signin" hidden>
+    <h1>Sign in to Homebox</h1>
+    <p class="lead" id="i-lead">Enter your Homebox email and password. Homebox Desktop will remember them on this PC.</p>
+    <form id="f-signin">
+      <label for="i-email">Email</label>
+      <input id="i-email" type="email" required>
+      <label for="i-pass">Password</label>
+      <input id="i-pass" type="password" required>
+      <div class="error" id="i-err"></div>
+      <div class="actions">
+        <button type="submit" id="i-btn">Sign in</button>
+        <button type="button" class="link" id="i-forgot">Forgot your password?</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- error -->
+  <section id="v-error" hidden>
+    <h1 id="e-title">Something went wrong</h1>
+    <p class="msg code" id="e-msg"></p>
+    <div class="actions">
+      <button type="button" id="e-retry">Try again</button>
+      <button type="button" class="secondary" id="e-logs">Show log files</button>
+    </div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const views = ["progress", "setup", "signin", "error"];
+  let navigating = false;
+  let current = null;
+
+  const api = () => window.go && window.go.main && window.go.main.App;
+
+  function show(name) {
+    for (const v of views) $("v-" + v).hidden = v !== name;
+  }
+
+  function errText(e) {
+    const s = ((e && (e.message || e)) + "").trim();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  async function openHomebox() {
+    if (navigating) return;
+    navigating = true;
+    try {
+      const url = await api().OpenHomebox();
+      window.location.replace(url);
+    } catch (e) {
+      navigating = false;
+      render({ phase: "error", title: "Couldn't open Homebox", message: errText(e), canRetry: true });
+    }
+  }
+
+  function render(s) {
+    if (!s) return;
+    current = s;
+    switch (s.phase) {
+      case "setup":
+        show("setup");
+        if (!document.activeElement || document.activeElement === document.body) $("s-name").focus();
+        break;
+      case "signin":
+        show("signin");
+        if (s.email && !$("i-email").value) $("i-email").value = s.email;
+        if (s.message) { $("i-err").textContent = s.message; $("i-err").classList.add("show"); }
+        ($("i-email").value ? $("i-pass") : $("i-email")).focus();
+        break;
+      case "error":
+        show("error");
+        $("e-title").textContent = s.title || "Something went wrong";
+        $("e-msg").textContent = s.message || "";
+        $("e-msg").hidden = !s.message;
+        $("e-retry").hidden = !s.canRetry;
+        break;
+      case "ready":
+        show("progress");
+        $("p-title").textContent = "Opening Homebox";
+        $("p-msg").textContent = "";
+        setBar(-1);
+        openHomebox();
+        break;
+      default: // starting, busy
+        show("progress");
+        $("p-title").textContent = s.title || "Working";
+        $("p-msg").textContent = s.message || "";
+        setBar(typeof s.progress === "number" ? s.progress : -1);
+    }
+  }
+
+  function setBar(p) {
+    const bar = $("p-bar");
+    if (p < 0) { bar.classList.add("indeterminate"); bar.firstElementChild.style.width = ""; }
+    else { bar.classList.remove("indeterminate"); bar.firstElementChild.style.width = Math.round(Math.min(1, p) * 100) + "%"; }
+  }
+
+  function busy(btn, on, label) {
+    btn.disabled = on;
+    if (label) btn.textContent = label;
+  }
+
+  $("f-setup").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const err = $("s-err");
+    err.classList.remove("show");
+    if ($("s-pass").value !== $("s-pass2").value) {
+      err.textContent = "The two passwords don't match.";
+      err.classList.add("show");
+      return;
+    }
+    const btn = $("s-btn");
+    busy(btn, true, "Creating…");
+    try {
+      await api().CreateAccount($("s-name").value, $("s-email").value, $("s-pass").value);
+    } catch (e) {
+      err.textContent = errText(e);
+      err.classList.add("show");
+    } finally {
+      busy(btn, false, "Create my inventory");
+    }
+  });
+
+  $("f-signin").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const err = $("i-err");
+    err.classList.remove("show");
+    const btn = $("i-btn");
+    busy(btn, true, "Signing in…");
+    try {
+      await api().SignIn($("i-email").value, $("i-pass").value);
+    } catch (e) {
+      err.textContent = errText(e);
+      err.classList.add("show");
+    } finally {
+      busy(btn, false, "Sign in");
+    }
+  });
+
+  $("i-forgot").addEventListener("click", async () => {
+    const err = $("i-err");
+    err.classList.remove("show");
+    try {
+      const link = await api().ForgotPassword($("i-email").value);
+      navigating = true;
+      window.location.assign(link);
+    } catch (e) {
+      err.textContent = errText(e);
+      err.classList.add("show");
+    }
+  });
+
+  document.querySelectorAll("[data-restore]").forEach((b) =>
+    b.addEventListener("click", () => api().RestoreFromStartScreen(b.dataset.restore === "zip")));
+
+  $("e-retry").addEventListener("click", () => {
+    render({ phase: "starting", title: "Trying again", progress: -1 });
+    api().Retry();
+  });
+  $("e-logs").addEventListener("click", () => api().OpenLogsFolder());
+
+  async function init() {
+    if (!api() || !window.runtime) { setTimeout(init, 50); return; }
+    window.runtime.EventsOn("state", render);
+    try {
+      render(await api().GetState());
+      $("foot").textContent = await api().Version();
+    } catch (e) {
+      render({ phase: "error", title: "Homebox Desktop", message: errText(e), canRetry: true });
+    }
+  }
+  render({ phase: "starting", title: "Starting Homebox", progress: -1 });
+  init();
+})();
+</script>
+</body>
+</html>

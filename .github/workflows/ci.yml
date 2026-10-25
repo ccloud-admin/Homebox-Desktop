@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - name: Fetch dependencies
+        run: ./scripts/fetch-deps.sh
+
+      - name: Vet and test
+        env:
+          GOFLAGS: -mod=mod
+          GOPROXY: "off"
+          GOSUMDB: "off"
+        run: |
+          go vet .
+          GOOS=windows go vet -tags desktop,production .
+          go test -count=1 .
+
+      - name: Build for Windows
+        env:
+          GOFLAGS: -mod=mod
+          GOPROXY: "off"
+          GOSUMDB: "off"
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-H windowsgui" -o HomeboxDesktop.exe .

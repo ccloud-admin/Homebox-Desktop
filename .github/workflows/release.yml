@@ -1,0 +1,45 @@
+name: Release
+
+# Push a tag such as v1.2.0 to build the Windows installer and publish it as a
+# GitHub release. Installed copies of Homebox Desktop find it through
+# Help > Check for updates (and the daily automatic check).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - name: Install NSIS and windres
+        run: sudo apt-get update && sudo apt-get install -y nsis binutils-mingw-w64-x86-64
+
+      - name: Build installer
+        env:
+          DESKTOP_REPO: ${{ github.repository }}
+        run: |
+          export VERSION="${GITHUB_REF_NAME#v}"
+          ./scripts/build-windows.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v v="## $VERSION" 'index($0,v)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Homebox Desktop $VERSION" \
+            --notes "${NOTES:-Homebox Desktop $VERSION}" \
+            "build/bin/HomeboxDesktop-Setup-$VERSION.exe" \
+            build/bin/SHA256SUMS.txt
