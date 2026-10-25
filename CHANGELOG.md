@@ -1,12 +1,15 @@
 # Changelog
 
+## 1.4.1
+
+- Desktop and Start menu shortcuts now show the official Homebox logo after upgrading. Before, Windows could keep showing the original placeholder icon.
+
 ## 1.4.0
 
 - Importing from a Homebox server now opens an Import page. Choose which collections to bring across (all are ticked to start with), and either use one of the server's accounts or create a fresh login, then set a new password. The server's old password isn't needed, so data can be brought across even if it's been forgotten or the server used single sign-on.
 - Homebox Desktop keeps a single login: it owns every imported collection, and the server's other accounts aren't brought across. Collections stay separate, just like on the server.
 - The whole import is done on a copy first, including bringing the data up to date and setting the password. If any step fails, nothing on this PC changes and the Import page stays open to try again.
 - Server settings such as notifiers, API keys and pending invitations are no longer carried over.
-- Desktop and Start menu shortcuts now show the official Homebox logo after upgrading. Before, Windows could keep showing the original placeholder icon.
 
 ## 1.3.0
 

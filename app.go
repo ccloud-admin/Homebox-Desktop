@@ -13,7 +13,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.4.0"
+var appVersion = "1.4.1"
 
 // unknownAccount marks restored data whose account email isn't known yet.
 const unknownAccount = "(unknown)"

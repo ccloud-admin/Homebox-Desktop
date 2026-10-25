@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-1.4.0}"
+VERSION="${VERSION:-1.4.1}"
 # GitHub repository ("owner/name") the app checks for its own updates.
 # Left empty, the app still updates Homebox itself but not Homebox Desktop.
 DESKTOP_REPO="${DESKTOP_REPO:-}"
