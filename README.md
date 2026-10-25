@@ -5,6 +5,12 @@ Homebox Desktop puts [Homebox](https://github.com/sysadminsmedia/homebox), the f
 Use it to keep track of what you own and where it is: tools, appliances, electronics, documents, warranties, receipts and photos.
 
 > **Unofficial.** Homebox Desktop is an independent project. It is not made by, endorsed by or affiliated with the Homebox project. It runs the official Homebox software unchanged.
+>
+> NOTE: This fork of the official Homebox project is entirely vibe-coded. It was made for my personal use as I have been on a long break from self-hosting and probably will not return
+> for a while. I still wanted to use Homebox locally without having to self host it and have it operate as an installed program.
+> The one other change that I did make is simplifying backups.
+>
+> Now, backups are made into a single folder than can be backed up just like any other folder, zipped or unzipped.
 
 ## Download and install
 
