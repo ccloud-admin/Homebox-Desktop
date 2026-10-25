@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- The app window, taskbar, installer, Start menu and desktop shortcuts, and the start screen now use the official Homebox logo.
+
 ## 1.2.0
 
 - Automatic backups. Choose a folder, how often to back up (every 6 hours to every 30 days) and how many backups to keep. Each backup is a single verified zip; the oldest are deleted once there are more than you chose to keep.

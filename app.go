@@ -13,7 +13,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.2.0"
+var appVersion = "1.2.1"
 
 // unknownAccount marks restored data whose account email isn't known yet.
 const unknownAccount = "(unknown)"
@@ -675,6 +675,6 @@ func (a *App) ShowSharingAddress() {
 func (a *App) About() {
 	info, _ := a.engine.Installed()
 	a.info("About Homebox Desktop", fmt.Sprintf(
-		"Homebox Desktop %s\nHomebox engine %s\n\nAn unofficial Windows app for Homebox, the open-source home inventory system by the Homebox contributors (sysadminsmedia/homebox, AGPL-3.0). Not affiliated with the Homebox project.\n\nYour data is stored in:\n%s",
+		"Homebox Desktop %s\nHomebox engine %s\n\nAn unofficial Windows app for Homebox, the open-source home inventory system by the Homebox contributors (sysadminsmedia/homebox, AGPL-3.0). Not affiliated with the Homebox project.\n\nHomebox logo by @lakotelman.\n\nYour data is stored in:\n%s",
 		appVersion, nonEmpty(info.Version, "not installed"), a.paths.Base))
 }

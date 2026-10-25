@@ -135,4 +135,4 @@ For help with Homebox itself (adding items, locations, labels and so on), see th
 
 ## Licence and credits
 
-Homebox is created by the Homebox contributors and released under the [GNU AGPL v3](LICENSE.txt). Homebox Desktop is free and open source under the same licence.
+Homebox is created by the Homebox contributors and released under the [GNU AGPL v3](LICENSE.txt). Homebox Desktop is free and open source under the same licence. The Homebox logo, used as this app's icon, was designed by [@lakotelman](https://github.com/lakotelman) for the Homebox project.
