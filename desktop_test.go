@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testEnv(t *testing.T) (Paths, *settingsStore) {
@@ -494,5 +495,380 @@ func TestDownloadVerified(t *testing.T) {
 	sums = strings.Repeat("a", 64) + "  HomeboxDesktop-Setup-9.9.9.exe\n"
 	if _, err := downloadVerified(context.Background(), srv.URL+"/HomeboxDesktop-Setup-9.9.9.exe", "HomeboxDesktop-Setup-9.9.9.exe", srv.URL+"/SHA256SUMS.txt", t.TempDir()); err == nil {
 		t.Fatal("tampered installer must be rejected")
+	}
+}
+
+func seedData(t *testing.T, p Paths) {
+	t.Helper()
+	files := map[string]string{
+		"homebox.db":                    "SQLite format 3\x00 inventory",
+		"homebox.db-wal":                "wal",
+		"attachments/photos/drill.jpg":  strings.Repeat("J", 5000),
+		"attachments/docs/receipt.pdf":  "%PDF receipt",
+		"attachments/docs/manual 2.pdf": "%PDF manual",
+	}
+	for rel, body := range files {
+		path := filepath.Join(p.HomeboxData, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestBackupZipRoundTrip(t *testing.T) {
+	p, st := testEnv(t)
+	seedData(t, p)
+	_ = st.Update(func(s *Settings) { s.AccountEmail = "owner@example.com"; s.SavedPassword = "c2VjcmV0" })
+	dest := filepath.Join(t.TempDir(), "My Backups")
+
+	pz, err := writeBackupZip(p, st.Get(), "v0.27.1", "automatic", dest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zips, _ := listBackupZips(dest); len(zips) != 0 {
+		t.Fatal("an unverified zip must not be listed")
+	}
+	path, err := finishBackupZip(pz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(filepath.Base(path), "Homebox Backup ") || filepath.Ext(path) != ".zip" {
+		t.Fatalf("unexpected name %s", path)
+	}
+
+	// listed with its details
+	zips, err := listBackupZips(dest)
+	if err != nil || len(zips) != 1 || zips[0].Reason != "automatic" || zips[0].Size == 0 {
+		t.Fatalf("listing: %+v %v", zips, err)
+	}
+
+	// it restores exactly
+	lb, err := openBackupZip(path, p.TempDir)
+	if err != nil {
+		t.Fatalf("zip should restore: %v", err)
+	}
+	if lb.Settings.AccountEmail != "owner@example.com" || lb.Settings.APIKeyPepper != st.Get().APIKeyPepper {
+		t.Fatal("settings not carried")
+	}
+	_ = os.WriteFile(filepath.Join(p.HomeboxData, "homebox.db"), []byte("changed"), 0o644)
+	if _, err := installBackupData(p, lb, nil); err != nil {
+		t.Fatal(err)
+	}
+	lb.Close()
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "homebox.db")); string(b) != "SQLite format 3\x00 inventory" {
+		t.Fatal("database not restored from zip")
+	}
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "attachments", "docs", "manual 2.pdf")); string(b) != "%PDF manual" {
+		t.Fatal("attachment not restored from zip")
+	}
+	// the password never goes into a backup
+	zr, _ := zip.OpenReader(path)
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		if strings.Contains(string(b), "c2VjcmV0") {
+			t.Fatalf("saved password found in %s", f.Name)
+		}
+	}
+	zr.Close()
+}
+
+func TestSameMinuteBackupsGetZipNames(t *testing.T) {
+	p, st := testEnv(t)
+	seedData(t, p)
+	dest := t.TempDir()
+	for i := 0; i < 3; i++ {
+		pz, err := writeBackupZip(p, st.Get(), "v", "automatic", dest, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := finishBackupZip(pz); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zips, _ := listBackupZips(dest)
+	if len(zips) != 3 {
+		t.Fatalf("all three backups should be listed, got %d", len(zips))
+	}
+	for _, z := range zips {
+		if filepath.Ext(z.Name) != ".zip" {
+			t.Fatalf("bad name %q", z.Name)
+		}
+		lb, err := openBackupZip(z.Path, p.TempDir)
+		if err != nil {
+			t.Fatalf("%s should restore: %v", z.Name, err)
+		}
+		lb.Close()
+	}
+	if got := pruneBackupZips(dest, 1); len(got) != 2 {
+		t.Fatalf("expected 2 pruned, got %v", got)
+	}
+}
+
+func TestBackupZipCorruptionIsCaught(t *testing.T) {
+	p, st := testEnv(t)
+	seedData(t, p)
+	dest := t.TempDir()
+	pz, err := writeBackupZip(p, st.Get(), "v0.27.1", "automatic", dest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pretend the drive mangled a file: change one recorded checksum.
+	pz.manifest.Files[0].SHA256 = strings.Repeat("0", 64)
+	if _, err := finishBackupZip(pz); err == nil {
+		t.Fatal("a zip that doesn't match must be rejected")
+	}
+	if entries, _ := os.ReadDir(dest); len(entries) != 0 {
+		t.Fatal("a rejected zip must be removed")
+	}
+}
+
+func TestZipBackupFolderAndPrune(t *testing.T) {
+	p, st := testEnv(t)
+	seedData(t, p)
+	folders := t.TempDir()
+	dir, _, err := createBackup(p, st.Get(), "v0.27.1", "manual", folders, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	pz, err := zipBackupFolder(dir, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := finishBackupZip(pz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lb, err := openBackupZip(path, p.TempDir); err != nil {
+		t.Fatalf("zip of a folder backup should restore: %v", err)
+	} else {
+		lb.Close()
+	}
+
+	// Older backups (by the date in their name), an unrelated file, and a
+	// stale half-written zip.
+	src, _ := os.ReadFile(path)
+	for _, n := range []string{"2026-01-01 0900", "2026-02-01 0900", "2026-03-01 0900", "2026-04-01 0900"} {
+		_ = os.WriteFile(filepath.Join(dest, "Homebox Backup "+n+".zip"), src, 0o644)
+	}
+	_ = os.WriteFile(filepath.Join(dest, "holiday photos.zip"), []byte("x"), 0o644)
+	stale := filepath.Join(dest, "Homebox Backup 2025-12-01 0900.zip.partial")
+	_ = os.WriteFile(stale, []byte("x"), 0o644)
+	old := time.Now().Add(-48 * time.Hour)
+	_ = os.Chtimes(stale, old, old)
+
+	zips, _ := listBackupZips(dest)
+	if len(zips) != 5 {
+		t.Fatalf("expected 5 backups listed (other files ignored), got %d", len(zips))
+	}
+	// The copies carry the original manifest date, so order by file name date
+	// for the copies: make sure the real newest is first.
+	if zips[0].Name != filepath.Base(path) {
+		t.Fatalf("newest first expected, got %s", zips[0].Name)
+	}
+
+	deleted := pruneBackupZips(dest, 2)
+	if len(deleted) != 3 {
+		t.Fatalf("expected 3 old backups removed, got %v", deleted)
+	}
+	left, _ := listBackupZips(dest)
+	if len(left) != 2 || left[0].Name != filepath.Base(path) {
+		t.Fatalf("wrong backups kept: %+v", left)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "holiday photos.zip")); err != nil {
+		t.Fatal("unrelated files must never be deleted")
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatal("stale half-written zip should be cleaned up")
+	}
+}
+
+func TestBackupFolderMissing(t *testing.T) {
+	p, st := testEnv(t)
+	seedData(t, p)
+	gone := filepath.Join(t.TempDir(), "unplugged-usb", "Backups")
+	if _, err := writeBackupZip(p, st.Get(), "v", "automatic", gone, nil); err == nil || !strings.Contains(err.Error(), "isn't available") {
+		t.Fatalf("expected a clear 'not available' error, got %v", err)
+	}
+	// A removed backup folder is recreated when its drive is still there.
+	parent := t.TempDir()
+	pz, err := writeBackupZip(p, st.Get(), "v", "automatic", filepath.Join(parent, "Backups"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := finishBackupZip(pz); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAutoBackupScheduling(t *testing.T) {
+	p, st := testEnv(t)
+	a := &App{paths: p, settings: st}
+	now := time.Now()
+	if due, _ := a.autoBackupDue(now); due {
+		t.Fatal("not due while switched off")
+	}
+	seedData(t, p)
+	_ = st.Update(func(s *Settings) {
+		s.AutoBackupEnabled = true
+		s.AutoBackupDir = t.TempDir()
+		s.AccountEmail = "owner@example.com"
+		s.AutoBackupEveryHours = 24
+	})
+	if due, overdue := a.autoBackupDue(now); !due || !overdue {
+		t.Fatal("first backup should be due straight away")
+	}
+	_ = st.Update(func(s *Settings) { s.LastAutoBackup = now.Add(-2 * time.Hour) })
+	if due, _ := a.autoBackupDue(now); due {
+		t.Fatal("not due 2 hours into a daily schedule")
+	}
+	_ = st.Update(func(s *Settings) { s.LastAutoBackup = now.Add(-25 * time.Hour) })
+	if due, overdue := a.autoBackupDue(now); !due || overdue {
+		t.Fatal("due but not yet overdue after 25 hours")
+	}
+	_ = st.Update(func(s *Settings) { s.LastAutoBackup = now.Add(-49 * time.Hour) })
+	if _, overdue := a.autoBackupDue(now); !overdue {
+		t.Fatal("overdue after 49 hours")
+	}
+	// after a failure, wait an hour before trying again
+	_ = st.Update(func(s *Settings) {
+		s.LastAutoBackupError = "drive missing"
+		s.LastAutoBackupAttempt = now.Add(-10 * time.Minute)
+	})
+	if due, _ := a.autoBackupDue(now); due {
+		t.Fatal("should wait after a failure")
+	}
+	_ = st.Update(func(s *Settings) { s.LastAutoBackupAttempt = now.Add(-61 * time.Minute) })
+	if due, _ := a.autoBackupDue(now); !due {
+		t.Fatal("should retry an hour after a failure")
+	}
+	if !validInterval(168) || validInterval(5) {
+		t.Fatal("interval validation")
+	}
+}
+
+func TestBackupZipPathIsConfined(t *testing.T) {
+	p, st := testEnv(t)
+	a := &App{paths: p, settings: st}
+	dir := t.TempDir()
+	_ = st.Update(func(s *Settings) { s.AutoBackupDir = dir })
+	if got, err := a.backupZipPath("Homebox Backup 2026-10-25 1530.zip"); err != nil || got != filepath.Join(dir, "Homebox Backup 2026-10-25 1530.zip") {
+		t.Fatalf("valid name rejected: %v", err)
+	}
+	for _, bad := range []string{"../Homebox Backup x.zip", "notes.txt", "Homebox Backup x.exe", `sub/Homebox Backup x.zip`, ""} {
+		if _, err := a.backupZipPath(bad); err == nil {
+			t.Fatalf("%q should be refused", bad)
+		}
+	}
+	if !pathInside(filepath.Join(p.Base, "x"), p.Base) || pathInside(dir, p.Base) {
+		t.Fatal("pathInside")
+	}
+}
+
+func TestIdleTracking(t *testing.T) {
+	p, st := testEnv(t)
+	buildFakeEngine(t, p)
+	eng := NewEngine(p, st)
+	gw := NewGateway(eng)
+	if _, err := gw.StartLocal(0); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Shutdown()
+	gw.lastActivity.Store(time.Now().Add(-time.Hour).UnixNano())
+	if gw.IdleFor() < 59*time.Minute {
+		t.Fatal("should be idle")
+	}
+	req, _ := http.NewRequest(http.MethodGet, gw.LocalURL()+"/api/v1/ws/events", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+	}
+	if gw.IdleFor() < 59*time.Minute {
+		t.Fatal("the live-update connection must not count as use")
+	}
+	if resp, err := http.Get(gw.LocalURL() + "/home"); err == nil {
+		resp.Body.Close()
+	}
+	if gw.IdleFor() > time.Second {
+		t.Fatal("using Homebox should reset the idle timer")
+	}
+}
+
+func TestDeleteToRecycleBinFallback(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "Homebox Backup 2026-01-01 0900.zip")
+	_ = os.WriteFile(a, []byte("x"), 0o644)
+	if err := moveToRecycleBin([]string{a}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(a); err == nil {
+		t.Fatal("file should be gone")
+	}
+}
+
+func TestQuietScheduledBackupWhileIdle(t *testing.T) {
+	p, st := testEnv(t)
+	buildFakeEngine(t, p)
+	a := &App{paths: p, settings: st}
+	a.engine = NewEngine(p, st)
+	a.gw = NewGateway(a.engine)
+	if _, err := a.gw.StartLocal(0); err != nil {
+		t.Fatal(err)
+	}
+	defer a.gw.Shutdown()
+	if err := a.startEngine("Starting"); err != nil {
+		t.Fatal(err)
+	}
+	defer a.engine.Stop()
+	defer a.stopWatch()
+	if err := engineRegister(a.engine.BaseURL(), "Sam", "owner@example.com", "pass1234"); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.SetCredentials("Sam", "owner@example.com", "pass1234")
+	a.afterEngineStart()
+	if a.GetState().Phase != "ready" {
+		t.Fatalf("expected ready, got %+v", a.GetState())
+	}
+	dest := t.TempDir()
+	_ = st.Update(func(s *Settings) {
+		s.AutoBackupEnabled = true
+		s.AutoBackupDir = dest
+		s.AutoBackupKeep = 5
+		s.LastAutoBackup = time.Now().Add(-25 * time.Hour)
+	})
+
+	// In use: nothing happens (due, but not overdue, so no question either).
+	a.gw.lastActivity.Store(time.Now().UnixNano())
+	a.maybeScheduledBackup()
+	if zips, _ := listBackupZips(dest); len(zips) != 0 {
+		t.Fatal("must not back up while Homebox is in use")
+	}
+
+	// Idle: the backup runs quietly and Homebox comes back.
+	a.gw.lastActivity.Store(time.Now().Add(-10 * time.Minute).UnixNano())
+	oldURL := a.engine.BaseURL()
+	a.maybeScheduledBackup()
+	zips, _ := listBackupZips(dest)
+	if len(zips) != 1 || zips[0].Reason != "automatic" {
+		t.Fatalf("expected one automatic backup, got %+v", zips)
+	}
+	if !a.engine.Running() || a.GetState().Phase != "ready" {
+		t.Fatalf("Homebox should be running again: %+v", a.GetState())
+	}
+	if a.engine.BaseURL() == oldURL {
+		t.Log("engine reused the same port")
+	}
+	if s := st.Get(); time.Since(s.LastAutoBackup) > time.Minute || s.LastAutoBackupError != "" {
+		t.Fatalf("result not recorded: %+v", s)
+	}
+	// Not due again straight away.
+	if due, _ := a.autoBackupDue(time.Now()); due {
+		t.Fatal("should not be due right after a backup")
 	}
 }

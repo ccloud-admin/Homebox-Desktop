@@ -258,13 +258,18 @@ func (a *App) updateEngine(rel Release) {
 	installed, _ := a.engine.Installed()
 	resume := a.pauseForOperation("Updating Homebox", "Backing up your data before updating…")
 	if hasData(a.paths) {
-		if _, _, err := createBackup(a.paths, a.settings.Get(), installed.Version, "before update to "+rel.Tag,
-			a.paths.AutoBackups, a.busyProgress("Updating Homebox", "Backing up")); err != nil {
+		dir, _, err := createBackup(a.paths, a.settings.Get(), installed.Version, "before update to "+rel.Tag,
+			a.paths.AutoBackups, a.busyProgress("Updating Homebox", "Backing up"))
+		if err != nil {
 			_ = resume("Reopening Homebox")
 			a.fail("Update cancelled", fmt.Errorf("the safety backup failed, so nothing was changed: %w", err))
 			return
 		}
 		pruneOldest(a.paths.AutoBackups, keepAutoBackup)
+		if a.settings.Get().AutoBackupEnabled {
+			a.setState(State{Phase: "busy", Title: "Updating Homebox", Message: "Copying the backup to your backup folder…", Progress: -1})
+			_ = a.copyToBackupFolder(dir)
+		}
 	}
 	if err := a.installEngine(rel); err != nil {
 		a.logf("engine update to %s failed: %v", rel.Tag, err)

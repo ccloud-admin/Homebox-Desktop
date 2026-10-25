@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Automatic backups. Choose a folder, how often to back up (every 6 hours to every 30 days) and how many backups to keep. Each backup is a single verified zip; the oldest are deleted once there are more than you chose to keep.
+- Scheduled backups never interrupt you. They run when the app opens, or once Homebox hasn't been used for a few minutes; if one is very overdue, the app asks first. If a backup can't be made (for example, a USB drive isn't plugged in), the app tells you and tries again an hour later.
+- New Backups page (File > Backups and automatic backup, Ctrl+Shift+B) listing every backup zip in the folder, with Back up now, Restore and Delete. Deleted backups go to the Recycle Bin where Windows supports it.
+- While automatic backup is on, File > Back up now and the backup taken before a Homebox update also put a zip in the backup folder.
+
 ## 1.1.0
 
 - Signing out inside the app now stays signed out: the next launch shows the sign-in screen instead of signing you back in. Signing in again with "Remember me" turns automatic sign-in back on.

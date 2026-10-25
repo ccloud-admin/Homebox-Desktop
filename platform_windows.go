@@ -3,7 +3,10 @@
 package main
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -89,3 +92,68 @@ func launchInstaller(path string) error {
 	}
 	return windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL)
 }
+
+var (
+	shell32              = windows.NewLazySystemDLL("shell32.dll")
+	procSHFileOperationW = shell32.NewProc("SHFileOperationW")
+)
+
+// shFileOpStruct mirrors SHFILEOPSTRUCTW (64-bit layout).
+type shFileOpStruct struct {
+	hwnd                  uintptr
+	wFunc                 uint32
+	pFrom                 *uint16
+	pTo                   *uint16
+	fFlags                uint16
+	fAnyOperationsAborted int32
+	hNameMappings         uintptr
+	lpszProgressTitle     *uint16
+}
+
+// moveToRecycleBin sends files to the Recycle Bin so a mistaken delete can
+// be undone. Drives without a Recycle Bin (some USB and network drives)
+// delete permanently. Anything left behind is removed directly.
+func moveToRecycleBin(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	var from []uint16
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return err
+		}
+		u, err := windows.UTF16FromString(abs)
+		if err != nil {
+			return err
+		}
+		from = append(from, u...) // includes the terminating zero
+	}
+	from = append(from, 0) // list ends with a second zero
+	const (
+		foDelete          = 0x3
+		fofSilent         = 0x4
+		fofNoConfirmation = 0x10
+		fofAllowUndo      = 0x40
+		fofNoErrorUI      = 0x400
+	)
+	op := shFileOpStruct{wFunc: foDelete, pFrom: &from[0], fFlags: fofAllowUndo | fofNoConfirmation | fofSilent | fofNoErrorUI}
+	runtime.LockOSThread()
+	_, _, _ = procSHFileOperationW.Call(uintptr(unsafe.Pointer(&op)))
+	runtime.UnlockOSThread()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			if err := os.Remove(p); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Compile-time check that shFileOpStruct is exactly the 56 bytes Windows
+// expects on 64-bit systems.
+var (
+	_ [56 - unsafe.Sizeof(shFileOpStruct{})]byte
+	_ [unsafe.Sizeof(shFileOpStruct{}) - 56]byte
+)

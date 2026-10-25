@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -42,6 +43,10 @@ type Gateway struct {
 	// and sign-outs from other devices on the network don't affect this PC.
 	OnWindowSignOut func()
 	OnWindowSignIn  func(email, password string)
+
+	// lastActivity is when Homebox was last used, from this PC or the
+	// network (unix nanoseconds). Scheduled backups wait for a quiet spell.
+	lastActivity atomic.Int64
 }
 
 type pendingLogin struct {
@@ -50,7 +55,22 @@ type pendingLogin struct {
 }
 
 func NewGateway(e *Engine) *Gateway {
-	return &Gateway{engine: e, nonces: map[string]pendingLogin{}}
+	g := &Gateway{engine: e, nonces: map[string]pendingLogin{}}
+	g.lastActivity.Store(time.Now().UnixNano())
+	return g
+}
+
+// IdleFor reports how long it has been since anyone used Homebox. The live
+// update connection Homebox keeps open doesn't count as use.
+func (g *Gateway) IdleFor() time.Duration {
+	return time.Since(time.Unix(0, g.lastActivity.Load()))
+}
+
+func (g *Gateway) noteActivity(r *http.Request) {
+	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return
+	}
+	g.lastActivity.Store(time.Now().UnixNano())
 }
 
 // StartLocal opens the window's private address on 127.0.0.1. It reuses the
@@ -154,6 +174,7 @@ func (g *Gateway) proxy(fromLAN bool) http.Handler {
 		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.noteActivity(r)
 		g.mu.Lock()
 		paused, msg := g.paused, g.pauseMsg
 		g.mu.Unlock()

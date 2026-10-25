@@ -26,6 +26,7 @@ func (a *App) buildMenu() *menu.Menu {
 
 	file := m.root.AddSubmenu("File")
 	file.AddText("Back up now…", keys.CmdOrCtrl("b"), in(a.Backup))
+	file.AddText("Backups and automatic backup…", keys.Combo("b", keys.CmdOrCtrlKey, keys.ShiftKey), in(a.OpenBackups))
 	file.AddText("Restore from backup folder…", nil, in(a.RestoreFolder))
 	file.AddText("Restore from zip file…", nil, in(a.RestoreZip))
 	file.AddSeparator()

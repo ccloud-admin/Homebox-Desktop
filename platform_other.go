@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -26,4 +27,14 @@ func openInFileManager(path string) {
 
 func launchInstaller(path string) error {
 	return exec.Command(path).Start()
+}
+
+// moveToRecycleBin deletes files. Only Windows has a Recycle Bin to use.
+func moveToRecycleBin(paths []string) error {
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }

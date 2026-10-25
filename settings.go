@@ -110,6 +110,17 @@ type Settings struct {
 	LastUpdateCheck        time.Time `json:"lastUpdateCheck,omitempty"`
 	DeclinedEngineVersion  string    `json:"declinedEngineVersion,omitempty"`
 	DeclinedDesktopVersion string    `json:"declinedDesktopVersion,omitempty"`
+
+	// Automatic backups: zipped backups written to a folder of the user's
+	// choice on a schedule, keeping the newest AutoBackupKeep of them.
+	AutoBackupEnabled     bool      `json:"autoBackupEnabled,omitempty"`
+	AutoBackupDir         string    `json:"autoBackupDir,omitempty"`
+	AutoBackupEveryHours  int       `json:"autoBackupEveryHours,omitempty"`
+	AutoBackupKeep        int       `json:"autoBackupKeep,omitempty"`
+	LastAutoBackup        time.Time `json:"lastAutoBackup,omitempty"`
+	LastAutoBackupAttempt time.Time `json:"lastAutoBackupAttempt,omitempty"`
+	LastAutoBackupError   string    `json:"lastAutoBackupError,omitempty"`
+	AutoBackupFailures    int       `json:"autoBackupFailures,omitempty"`
 }
 
 type EngineInfo struct {
@@ -149,6 +160,14 @@ func loadSettings(path string) (*settingsStore, error) {
 	}
 	if st.s.SharePort == 0 {
 		st.s.SharePort = defaultSharePort
+		changed = true
+	}
+	if st.s.AutoBackupEveryHours <= 0 {
+		st.s.AutoBackupEveryHours = defaultBackupEveryHours
+		changed = true
+	}
+	if st.s.AutoBackupKeep <= 0 {
+		st.s.AutoBackupKeep = defaultBackupKeep
 		changed = true
 	}
 	if changed {

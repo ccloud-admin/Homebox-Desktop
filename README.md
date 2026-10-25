@@ -33,29 +33,50 @@ After that, the app opens straight into Homebox every time.
 
 ## Backing up
 
-Choose **File > Back up now** (or press **Ctrl+B**) and pick where to save. Homebox Desktop creates one folder, for example:
+### Automatic backups
 
-```
-Homebox Backup 2026-10-24 1530
-```
+Homebox Desktop can back up your whole inventory on a schedule, as zip files in a folder you choose.
 
-That folder holds everything: all your items, photos, receipts and documents. Every file is checked after copying, so a finished backup is a good backup.
+1. Choose **File > Backups and automatic backup...** (or press **Ctrl+Shift+B**).
+2. Turn on **Back up automatically** and pick a folder. For the best protection, use a USB or external drive, or a cloud folder such as OneDrive or Google Drive, so your backups survive if this PC fails.
+3. Choose **How often** (from every 6 hours to every 30 days) and how many **Backups to keep**.
 
-You can zip the folder (right-click it, then **Send to > Compressed (zipped) folder**) and keep it on a USB drive, an external disk or cloud storage such as OneDrive or Google Drive.
+The first backup is made straight away. After that:
 
-**Tip:** back up regularly, and keep at least one copy somewhere other than your PC.
+- Each backup is a single zip, for example `Homebox Backup 2026-10-25 1530.zip`, holding all your items, photos, receipts and documents. Every file is checked after it's written, so a finished backup is a good backup.
+- Once the folder has more backups than you chose to keep, the oldest are deleted.
+- Homebox pauses for a few seconds while a backup is made. To avoid interrupting you, scheduled backups wait until nobody has used Homebox for a few minutes, or until the next time the app opens. If a backup is very overdue, the app asks before making it.
+- If a backup can't be made (for example, the USB drive isn't plugged in), the app tells you and tries again an hour later.
+- While automatic backup is on, every other backup the app makes, including **File > Back up now** and the backup taken before a Homebox update, also puts a zip in the folder.
+
+### Managing your backups
+
+The same **Backups** page lists every backup zip in the folder, newest first, with its date, type and size.
+
+- **Back up now** makes an extra backup immediately.
+- **Restore...** next to a backup puts your inventory back to how it was at that time.
+- To delete backups, tick them (or **Select all**) and click **Delete selected**. Deleted backups go to the Recycle Bin when the folder is on this PC's own drives. On USB, network and some cloud drives they are deleted permanently.
+- **Open** shows the folder in File Explorer.
+
+Only files named `Homebox Backup ... .zip` are listed or deleted. Anything else in the folder is left alone.
+
+### One-off backup to a folder
+
+Choose **File > Back up now** (or press **Ctrl+B**) and pick where to save. Homebox Desktop creates one folder, for example `Homebox Backup 2026-10-24 1530`, holding everything. You can zip it (right-click it, then **Send to > Compressed (zipped) folder**) and keep it anywhere.
 
 ## Restoring
 
-Choose **File > Restore from backup folder...** and pick the backup folder, or **File > Restore from zip file...** and pick the zip. You don't need to unzip it first.
+From the **Backups** page, click **Restore...** next to the backup you want.
+
+You can also choose **File > Restore from backup folder...** and pick a backup folder, or **File > Restore from zip file...** and pick a zip. You don't need to unzip it first.
 
 Homebox Desktop checks every file before restoring. It replaces what's currently in the app, but first keeps a safety copy of your current data, so a restore can be undone.
 
 ### Moving to a new PC
 
-1. On the old PC, choose **File > Back up now** and copy the backup (or its zip) to the new PC.
+1. On the old PC, make a backup (or use one of your automatic backups) and copy it to the new PC, or make sure the new PC can reach your backup folder (for example, the same OneDrive folder or USB drive).
 2. Install Homebox Desktop on the new PC.
-3. On the welcome screen, click **Backup folder...** or **Zip file...** and choose your backup.
+3. On the welcome screen, click **Zip file...** or **Backup folder...** and choose your backup. Or open **File > Backups and automatic backup...**, choose your backup folder and click **Restore...** next to the backup.
 4. Sign in with the same email and password you used before.
 
 ## Using Homebox on your phone
@@ -95,7 +116,7 @@ Everything stays on your PC, in your own Windows user folder:
 %LOCALAPPDATA%\HomeboxDesktop
 ```
 
-Choose **File > Open Homebox Desktop data folder** to go there. Your inventory isn't uploaded anywhere. Homebox Desktop itself only goes online to download Homebox and check for updates, both from GitHub. A few optional Homebox features, such as looking up a product by its barcode, use online services when you choose to use them.
+Choose **File > Open Homebox Desktop data folder** to go there. Backups go wherever you choose. Your inventory isn't uploaded anywhere. Homebox Desktop itself only goes online to download Homebox and check for updates, both from GitHub. A few optional Homebox features, such as looking up a product by its barcode, use online services when you choose to use them.
 
 ## Uninstalling
 

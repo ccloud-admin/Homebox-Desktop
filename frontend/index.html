@@ -18,8 +18,9 @@
     }
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  html { height: 100%; }
   body {
+    min-height: 100%;
     margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
     display: grid; place-items: center; padding: 24px 16px;
@@ -63,6 +64,55 @@
   @media (prefers-reduced-motion: reduce) { .bar.indeterminate > i { animation: none; width: 100%; opacity: .5; } }
   [hidden] { display: none !important; }
   .foot { margin-top: 18px; font-size: 12px; color: var(--muted); text-align: center; }
+
+  /* Backups page */
+  .card.wide { max-width: 780px; }
+  .bk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .bk-head h1 { margin: 0; }
+  .panel { border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 16px; margin: 18px 0 26px; }
+  .toggle-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .t-title { font-weight: 650; }
+  .switch { position: relative; flex: none; width: 44px; height: 26px; margin: 0; }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s; pointer-events: none; }
+  .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0003; transition: transform .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { box-shadow: 0 0 0 3px var(--focus); }
+  .folder-row { display: flex; gap: 8px; align-items: stretch; }
+  .folder-row .path { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; overflow-wrap: anywhere; font-size: 14px; }
+  .folder-row .path.empty { color: var(--muted); }
+  .folder-row button { flex: none; }
+  select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; outline: none;
+  }
+  select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+  .note { background: var(--accent-soft); border-radius: 9px; padding: 9px 12px; margin-top: 14px; font-size: 13.5px; display: none; }
+  .note.show { display: block; }
+  .actions.inline { flex-direction: row; flex-wrap: wrap; margin-top: 16px; }
+  .list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .list-head h2 { font-size: 16px; margin: 0; font-weight: 650; }
+  .list-head span { color: var(--muted); font-size: 13px; }
+  .list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .bk-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .bk-row:first-child { border-top: none; }
+  .bk-row.selected { background: var(--accent-soft); }
+  .bk-row input[type=checkbox], .check input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .bk-main { flex: 1; min-width: 0; cursor: pointer; }
+  .bk-when { font-weight: 600; }
+  .bk-meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .bk-row button { flex: none; padding: 6px 12px; font-size: 13.5px; }
+  .empty-list { padding: 22px 16px; color: var(--muted); text-align: center; }
+  .list-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .check { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; font-size: 14px; cursor: pointer; }
+  button.danger { background: var(--danger); color: #fff; }
+  @media (prefers-color-scheme: dark) { button.danger { color: #1b1a18; } }
+  @media (max-width: 560px) {
+    .folder-row { flex-wrap: wrap; }
+    .folder-row .path { flex-basis: 100%; }
+    .row.stack { flex-direction: column; gap: 0; }
+  }
 </style>
 </head>
 <body>
@@ -135,20 +185,77 @@
     </div>
   </section>
 
+  <!-- backups -->
+  <section id="v-backups" hidden>
+    <div class="bk-head">
+      <h1>Backups</h1>
+      <button type="button" class="secondary" id="b-close">Back to Homebox</button>
+    </div>
+    <p class="lead" style="margin-top:8px">Keep zipped backups of your whole inventory in a folder of your choice. For the best protection, pick a USB or external drive, or a cloud folder such as OneDrive.</p>
+
+    <div class="panel">
+      <div class="toggle-row">
+        <div>
+          <div class="t-title">Back up automatically</div>
+          <div class="hint" id="b-status"></div>
+        </div>
+        <label class="switch"><input type="checkbox" id="b-enabled" aria-label="Back up automatically"><span></span></label>
+      </div>
+
+      <label>Backup folder</label>
+      <div class="folder-row">
+        <div class="path empty" id="b-folder">No folder chosen</div>
+        <button type="button" class="secondary" id="b-choose">Choose…</button>
+        <button type="button" class="secondary" id="b-open">Open</button>
+      </div>
+
+      <div class="row stack">
+        <div>
+          <label for="b-every">How often</label>
+          <select id="b-every"></select>
+        </div>
+        <div>
+          <label for="b-keep">Backups to keep</label>
+          <input id="b-keep" type="number" min="1" max="999" inputmode="numeric">
+        </div>
+      </div>
+      <div class="hint">When the folder has more backups than this, the oldest are deleted after each new backup. Every backup Homebox Desktop makes, including File &gt; Back up now, also puts a zip here while automatic backup is on.</div>
+
+      <div class="error" id="b-err"></div>
+      <div class="note" id="b-note"></div>
+      <div class="actions inline">
+        <button type="button" id="b-now">Back up now</button>
+      </div>
+    </div>
+
+    <div class="list-head">
+      <h2 id="b-list-title">Backups in this folder</h2>
+      <span id="b-total"></span>
+    </div>
+    <div class="list" id="b-list"></div>
+    <div class="list-actions" id="b-list-actions">
+      <label class="check"><input type="checkbox" id="b-all"> Select all</label>
+      <button type="button" class="danger" id="b-delete" disabled>Delete selected</button>
+    </div>
+  </section>
+
   <div class="foot" id="foot"></div>
 </main>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const views = ["progress", "setup", "signin", "error"];
+  const views = ["progress", "setup", "signin", "error", "backups"];
   let navigating = false;
   let current = null;
+  let view = "";      // "" or "backups"
+  let page = null;    // latest Backups page data
 
   const api = () => window.go && window.go.main && window.go.main.App;
 
   function show(name) {
     for (const v of views) $("v-" + v).hidden = v !== name;
+    document.querySelector("main.card").classList.toggle("wide", name === "backups");
   }
 
   function errText(e) {
@@ -171,6 +278,10 @@
   function render(s) {
     if (!s) return;
     current = s;
+    if (view === "backups" && (s.phase === "ready" || s.phase === "setup" || s.phase === "signin")) {
+      showBackups();
+      return;
+    }
     switch (s.phase) {
       case "setup":
         show("setup");
@@ -274,10 +385,199 @@
   });
   $("e-logs").addEventListener("click", () => api().OpenLogsFolder());
 
+  // ---------------------------------------------------------------- backups
+
+  function showBackups() {
+    show("backups");
+    $("b-close").textContent = current && current.phase === "ready" ? "Back to Homebox" : "Back";
+    loadBackups();
+  }
+
+  async function loadBackups() {
+    try { fillBackups(await api().GetBackupsPage()); }
+    catch (e) { setBackupsError(errText(e)); }
+  }
+
+  function setBackupsError(msg) {
+    const el = $("b-err");
+    el.textContent = msg || "";
+    el.classList.toggle("show", !!msg);
+  }
+
+  function setNote(msg) {
+    const el = $("b-note");
+    el.textContent = msg || "";
+    el.classList.toggle("show", !!msg);
+  }
+
+  function fillBackups(p) {
+    page = p;
+    $("b-enabled").checked = p.enabled;
+    const folder = $("b-folder");
+    folder.textContent = p.folder || "No folder chosen";
+    folder.classList.toggle("empty", !p.folder);
+    $("b-open").hidden = !p.folder;
+
+    const every = $("b-every");
+    if (!every.options.length) {
+      for (const o of p.intervals) every.add(new Option(o.label, o.hours));
+    }
+    every.value = String(p.everyHours);
+    if (document.activeElement !== $("b-keep")) $("b-keep").value = p.keep;
+
+    let status;
+    if (!p.folder) status = "Choose a folder to get started.";
+    else if (!p.enabled) status = "Off. Last backup to this folder: " + p.lastBackup + ".";
+    else status = "Last backup: " + p.lastBackup + ". Next: " + p.nextBackup + ".";
+    $("b-status").textContent = status;
+
+    if (p.folderProblem) setBackupsError(p.folderProblem);
+    else if (p.lastError) setBackupsError("The last backup to this folder didn't work: " + p.lastError);
+    else setBackupsError("");
+
+    $("b-now").disabled = !p.folder || !p.canBackUp;
+    $("b-now").title = !p.canBackUp ? "There is nothing to back up yet" : "";
+
+    const list = $("b-list");
+    list.textContent = "";
+    $("b-total").textContent = p.backups.length
+      ? p.backups.length + (p.backups.length === 1 ? " backup, " : " backups, ") + p.totalSize
+      : "";
+    $("b-list-actions").hidden = p.backups.length === 0;
+    if (!p.folder) {
+      list.innerHTML = '<div class="empty-list">Choose a backup folder to see its backups here.</div>';
+    } else if (!p.backups.length) {
+      list.innerHTML = '<div class="empty-list">No backups in this folder yet.</div>';
+    }
+    for (const b of p.backups) {
+      const row = document.createElement("div");
+      row.className = "bk-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = b.name;
+      cb.setAttribute("aria-label", "Select backup from " + b.when);
+      cb.addEventListener("change", updateSelection);
+      const main = document.createElement("div");
+      main.className = "bk-main";
+      const when = document.createElement("div");
+      when.className = "bk-when";
+      when.textContent = b.when;
+      const meta = document.createElement("div");
+      meta.className = "bk-meta";
+      meta.textContent = [b.kind, b.computer ? "from " + b.computer : "", b.size].filter(Boolean).join(" · ");
+      meta.title = b.name;
+      main.append(when, meta);
+      main.addEventListener("click", () => { cb.checked = !cb.checked; updateSelection(); });
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "secondary";
+      restore.textContent = "Restore…";
+      restore.addEventListener("click", async () => {
+        setBackupsError("");
+        try { await api().RestoreBackupZip(b.name); }
+        catch (e) { setBackupsError(errText(e)); }
+      });
+      row.append(cb, main, restore);
+      list.append(row);
+    }
+    updateSelection();
+  }
+
+  function selectedNames() {
+    return [...document.querySelectorAll("#b-list input[type=checkbox]:checked")].map((c) => c.value);
+  }
+
+  function updateSelection() {
+    const boxes = [...document.querySelectorAll("#b-list input[type=checkbox]")];
+    const n = boxes.filter((c) => c.checked).length;
+    boxes.forEach((c) => c.closest(".bk-row").classList.toggle("selected", c.checked));
+    $("b-delete").disabled = n === 0;
+    $("b-delete").textContent = n > 1 ? "Delete " + n + " backups" : "Delete selected";
+    $("b-all").checked = n > 0 && n === boxes.length;
+    $("b-all").indeterminate = n > 0 && n < boxes.length;
+  }
+
+  async function saveSchedule(enabled) {
+    setBackupsError("");
+    const keep = parseInt($("b-keep").value, 10);
+    try {
+      fillBackups(await api().SaveBackupSchedule(enabled, parseInt($("b-every").value, 10), keep));
+      return true;
+    } catch (e) {
+      const msg = errText(e);
+      await loadBackups();
+      setBackupsError(msg);
+      return false;
+    }
+  }
+
+  async function backupNow(label) {
+    setBackupsError("");
+    setNote(label || "");
+    const btn = $("b-now");
+    busy(btn, true, "Backing up…");
+    try {
+      setNote(await api().BackupToFolderNow());
+    } catch (e) {
+      setNote("");
+      setBackupsError(errText(e));
+    } finally {
+      busy(btn, false, "Back up now");
+      if (view === "backups") loadBackups();
+    }
+  }
+
+  $("b-enabled").addEventListener("change", async (ev) => {
+    const on = ev.target.checked;
+    setNote("");
+    if (on && page && !page.folder) {
+      try { fillBackups(await api().ChooseBackupFolder()); }
+      catch (e) { setBackupsError(errText(e)); }
+      if (!page || !page.folder) { ev.target.checked = false; return; }
+    }
+    const ok = await saveSchedule(on);
+    if (ok && on && page && page.canBackUp && page.lastBackup === "never") {
+      backupNow("Making the first backup…");
+    }
+  });
+  $("b-every").addEventListener("change", () => saveSchedule($("b-enabled").checked));
+  $("b-keep").addEventListener("change", () => saveSchedule($("b-enabled").checked));
+  $("b-choose").addEventListener("click", async () => {
+    setBackupsError("");
+    setNote("");
+    try { fillBackups(await api().ChooseBackupFolder()); }
+    catch (e) { setBackupsError(errText(e)); }
+  });
+  $("b-open").addEventListener("click", () => api().OpenBackupFolder());
+  $("b-now").addEventListener("click", () => backupNow());
+  $("b-all").addEventListener("change", (ev) => {
+    document.querySelectorAll("#b-list input[type=checkbox]").forEach((c) => { c.checked = ev.target.checked; });
+    updateSelection();
+  });
+  $("b-delete").addEventListener("click", async () => {
+    const names = selectedNames();
+    if (!names.length) return;
+    setBackupsError("");
+    setNote("");
+    try { fillBackups(await api().DeleteBackups(names)); }
+    catch (e) { setBackupsError(errText(e)); loadBackups(); }
+  });
+  $("b-close").addEventListener("click", async () => {
+    setNote("");
+    await api().CloseBackups();
+  });
+
+  function setView(v) {
+    view = v || "";
+    if (current) render(current);
+  }
+
   async function init() {
     if (!api() || !window.runtime) { setTimeout(init, 50); return; }
     window.runtime.EventsOn("state", render);
+    window.runtime.EventsOn("view", setView);
     try {
+      view = (await api().StartScreenLoaded()) || "";
       render(await api().GetState());
       $("foot").textContent = await api().Version();
     } catch (e) {

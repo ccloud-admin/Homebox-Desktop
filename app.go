@@ -13,7 +13,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.1.0"
+var appVersion = "1.2.0"
 
 // unknownAccount marks restored data whose account email isn't known yet.
 const unknownAccount = "(unknown)"
@@ -47,6 +47,14 @@ type App struct {
 
 	watchMu   sync.Mutex
 	watchStop chan struct{}
+
+	// Which screen the window shows: Homebox itself, or the app's own start
+	// screen (which also hosts the Backups page when view is "backups").
+	viewMu        sync.Mutex
+	view          string
+	onStartScreen bool
+
+	lastBackupAsk time.Time
 
 	fatal error
 }
@@ -100,6 +108,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.logf("Homebox Desktop %s starting", appVersion)
 	go a.boot()
+	go a.autoBackupLoop()
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -124,12 +133,21 @@ func (a *App) boot() {
 			return
 		}
 	}
+	// A scheduled backup that fell due while the app was closed is made now,
+	// before Homebox starts, so it never interrupts anyone.
+	var finishBackup func()
+	if due, _ := a.autoBackupDue(time.Now()); due {
+		finishBackup = a.startupBackup()
+	}
 	if err := a.startEngine("Starting Homebox"); err != nil {
 		a.logf("engine start failed: %v", err)
 		a.setState(State{Phase: "error", Title: "Homebox didn't start", Message: err.Error(), CanRetry: true})
 		return
 	}
 	a.afterEngineStart()
+	if finishBackup != nil {
+		go finishBackup()
+	}
 	if a.settings.Get().AccountEmail != "" {
 		go a.autoUpdateCheck()
 	}
@@ -256,8 +274,13 @@ func (a *App) setState(s State) {
 }
 
 // showStartScreen brings the window back to the start screen (from Homebox).
+// It does nothing when the start screen is already showing, so pages on it
+// (such as Backups) keep their place.
 func (a *App) showStartScreen() {
-	if a.ctx != nil {
+	a.viewMu.Lock()
+	on := a.onStartScreen
+	a.viewMu.Unlock()
+	if a.ctx != nil && !on {
 		wruntime.WindowReloadApp(a.ctx)
 	}
 }
@@ -280,6 +303,7 @@ func (a *App) OpenHomebox() (string, error) {
 	if a.engine.BaseURL() == "" {
 		return "", errors.New("Homebox is not running")
 	}
+	a.leftStartScreen()
 	if s.AccountEmail == "" || pw == "" {
 		return a.gw.LocalURL() + "/", nil
 	}
@@ -349,6 +373,7 @@ func (a *App) ForgotPassword(email string) (string, error) {
 	}
 	// Forget the stored password; the user will sign in again afterwards.
 	_ = a.settings.Update(func(s *Settings) { s.SavedPassword = "" })
+	a.leftStartScreen()
 	return link, nil
 }
 
@@ -463,8 +488,12 @@ func (a *App) Backup() {
 		return
 	}
 	a.logf("backup written to %s (%d files, %s)", dir, m.FileCount, humanBytes(m.TotalBytes))
-	if a.ask("Backup complete", fmt.Sprintf("Your backup is saved in:\n%s\n\n%d files, %s, all verified.\n\nYou can zip this folder and store it anywhere. Open the folder now?",
-		dir, m.FileCount, humanBytes(m.TotalBytes))) {
+	note := a.copyToBackupFolder(dir)
+	if note != "" {
+		note = "\n\n" + note
+	}
+	if a.ask("Backup complete", fmt.Sprintf("Your backup is saved in:\n%s\n\n%d files, %s, all verified.%s\n\nYou can zip this folder and store it anywhere. Open the folder now?",
+		dir, m.FileCount, humanBytes(m.TotalBytes), note)) {
 		openInFileManager(dir)
 	}
 }
@@ -485,34 +514,41 @@ func (a *App) restore(fromZip bool) {
 	}
 	defer a.opMu.Unlock()
 
-	var (
-		lb  *LoadedBackup
-		err error
-	)
 	def := a.settings.Get().LastBackupParent
 	if fromZip {
 		file := a.pickFile("Choose a zipped Homebox backup", def,
 			[]wruntime.FileFilter{{DisplayName: "Zip files (*.zip)", Pattern: "*.zip"}})
-		if file == "" {
-			return
+		if file != "" {
+			a.restoreFrom(file, true)
 		}
+		return
+	}
+	if dir := a.pickFolder("Choose the Homebox backup folder to restore", def, false); dir != "" {
+		a.restoreFrom(dir, false)
+	}
+}
+
+// restoreFrom checks a backup (folder or zip), asks for confirmation and
+// restores it. The caller holds opMu. It reports whether the restore happened.
+func (a *App) restoreFrom(path string, isZip bool) bool {
+	var (
+		lb  *LoadedBackup
+		err error
+	)
+	if isZip {
 		a.setState(State{Phase: "busy", Title: "Checking backup", Message: "Unzipping and checking every file…", Progress: -1})
 		a.showStartScreen()
-		lb, err = openBackupZip(file, a.paths.TempDir)
+		lb, err = openBackupZip(path, a.paths.TempDir)
 	} else {
-		dir := a.pickFolder("Choose the Homebox backup folder to restore", def, false)
-		if dir == "" {
-			return
-		}
 		a.setState(State{Phase: "busy", Title: "Checking backup", Message: "Checking every file in the backup…", Progress: -1})
 		a.showStartScreen()
-		lb, err = openBackupFolder(dir)
+		lb, err = openBackupFolder(path)
 	}
 	if err != nil {
 		a.logf("restore check failed: %v", err)
 		a.fail("Can't restore this backup", err)
 		a.backToCurrentState()
-		return
+		return false
 	}
 	defer lb.Close()
 
@@ -520,13 +556,13 @@ func (a *App) restore(fromZip bool) {
 	installed, _ := a.engine.Installed()
 	extra := ""
 	if m.EngineVersion != "" && installed.Version != "" && newerVersion(m.EngineVersion, installed.Version) {
-		extra = fmt.Sprintf("\n\nNote: this backup came from a newer Homebox (%s) than this PC has (%s). Choose Help > Check for Homebox updates first if the restore doesn't open.", m.EngineVersion, installed.Version)
+		extra = fmt.Sprintf("\n\nNote: this backup came from a newer Homebox (%s) than this PC has (%s). Choose Help > Check for updates first if the restore doesn't open.", m.EngineVersion, installed.Version)
 	}
 	msg := fmt.Sprintf("Restore the backup from %s?\n\n%d files, %s, from the computer \"%s\".\n\nEverything currently in Homebox on this PC will be replaced. A safety copy of the current data is kept in the Homebox Desktop folder.%s",
 		m.CreatedAt.Local().Format("Monday 2 January 2006 at 3:04 PM"), m.FileCount, humanBytes(m.TotalBytes), nonEmpty(m.Computer, "another PC"), extra)
 	if !a.ask("Restore backup", msg) {
 		a.backToCurrentState()
-		return
+		return false
 	}
 
 	resume := a.pauseForOperation("Restoring", "Pausing Homebox…")
@@ -535,7 +571,7 @@ func (a *App) restore(fromZip bool) {
 		a.logf("restore failed: %v", err)
 		_ = resume("Reopening Homebox")
 		a.fail("Restore failed", fmt.Errorf("%w\n\nYour existing data was not changed.", err))
-		return
+		return false
 	}
 	a.logf("restored backup from %s (made %s); safety copy at %s", lb.Root, m.CreatedAt.Format(time.RFC3339), safety)
 	prevEmail := a.settings.Get().AccountEmail
@@ -553,14 +589,18 @@ func (a *App) restore(fromZip bool) {
 			s.SavedPassword = ""
 		}
 	})
+	// Leave the Backups page (if the restore started there) so the restored
+	// inventory opens.
+	a.setView("")
 	if err := resume("Opening the restored inventory"); err != nil {
-		return
+		return true
 	}
 	note := ""
 	if safety != "" {
 		note = "\n\nYour previous data was kept as a safety copy in:\n" + safety
 	}
-	a.info("Restore complete", "Your inventory has been restored from the backup."+note)
+	go a.info("Restore complete", "Your inventory has been restored from the backup."+note)
+	return true
 }
 
 // backToCurrentState returns the window to Homebox (or the right start

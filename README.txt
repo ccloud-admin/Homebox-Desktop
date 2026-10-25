@@ -25,6 +25,14 @@ BACKUPS
   File > Restore from backup folder... or Restore from zip file... puts it
   back. Your current data is kept as a safety copy before a restore.
 
+AUTOMATIC BACKUPS
+  File > Backups and automatic backup (Ctrl+Shift+B) backs up your whole
+  inventory on a schedule, as zip files in a folder you choose, and keeps
+  the newest few. The same page lists every backup in the folder, where you
+  can restore one or delete the ones you no longer need. Scheduled backups
+  wait until Homebox hasn't been used for a few minutes, or until the app
+  next opens, so they don't interrupt you.
+
 SHARING ON YOUR HOME NETWORK
   Sharing > Share on my home network lets phones and other computers on the
   same Wi-Fi use Homebox at the address shown in Sharing > Show sharing

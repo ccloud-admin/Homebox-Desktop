@@ -27,6 +27,7 @@ Homebox Backup 2026-10-24 1530/
   data/                  homebox.db (+ WAL files) and all attachments
 ```
 
+- **Automatic backups.** `autobackup.go` schedules them and `backup_zip.go` writes them. A zip is written straight from the data folder while the engine is stopped, read back and checked against its manifest, and only then renamed from `.zip.partial` to `.zip`. Scheduled backups run before the engine starts at launch, or while open once the gateway has seen no requests for 5 minutes (the Homebox live-update websocket doesn't count). An overdue backup asks first. Retention only ever touches files named `Homebox Backup *.zip`.
 - **Updates.** At most once every 20 hours the app checks the latest Homebox release and the latest release of this repository (the repository is passed in at build time with `-X main.desktopRepo=owner/name`). Engine updates take a backup to `auto-backups\` first and roll back if the new engine won't start. App updates download the installer, check it against the release's `SHA256SUMS.txt`, and run it.
 
 ## Building
@@ -72,6 +73,7 @@ The **Release** workflow (`.github/workflows/release.yml`) builds the installer 
 | `engine.go` | Download, verify, start and stop the Homebox engine |
 | `proxy.go` | Window and network gateways, automatic sign-in, sign-out detection |
 | `backup.go` | Backup format, verification, zip handling, restore swap |
+| `backup_zip.go`, `autobackup.go` | Zipped backups, listing and retention, scheduler, Backups page |
 | `settings.go`, `dialogs.go` | Paths, settings, file pickers, `desktop.log` |
 | `platform_windows.go` | DPAPI, hidden engine process, job object, installer launch |
 | `frontend/index.html` | Start screen |
