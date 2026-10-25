@@ -10,7 +10,7 @@ Use it to keep track of what you own and where it is: tools, appliances, electro
 > for a while. I still wanted to use Homebox locally without having to self host it and have it operate as an installed program.
 > The one other change that I did make is simplifying backups.
 >
-> Now, backups are made into a single folder than can be backed up just like any other folder, zipped or unzipped.
+> Now, backups are made into a single folder than can be backed up just like any other folder.
 
 ## Download and install
 
