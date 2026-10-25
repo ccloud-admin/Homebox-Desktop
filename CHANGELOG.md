@@ -6,6 +6,7 @@
 - Homebox Desktop keeps a single login: it owns every imported collection, and the server's other accounts aren't brought across. Collections stay separate, just like on the server.
 - The whole import is done on a copy first, including bringing the data up to date and setting the password. If any step fails, nothing on this PC changes and the Import page stays open to try again.
 - Server settings such as notifiers, API keys and pending invitations are no longer carried over.
+- Desktop and Start menu shortcuts now show the official Homebox logo after upgrading. Before, Windows could keep showing the original placeholder icon.
 
 ## 1.3.0
 

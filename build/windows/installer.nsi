@@ -13,6 +13,10 @@ ManifestDPIAware true
 !define EXENAME   "HomeboxDesktop.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\HomeboxDesktop"
 !define FWRULE    "Homebox Desktop (home network sharing)"
+; The shortcut icon. Windows caches shortcut icons by file path, so when the
+; icon's picture changes it must be installed under a new name, or existing
+; shortcuts keep showing the old picture. (1.0 and 1.1 used icon.ico.)
+!define ICONFILE  "HomeboxDesktop.ico"
 
 Name "${APPNAME}"
 OutFile "${OUTFILE}"
@@ -75,12 +79,20 @@ Section "${APPNAME} (required)" SecMain
 
   SetOutPath "$INSTDIR"
   File "../bin/${EXENAME}"
-  File "icon.ico"
+  File "/oname=${ICONFILE}" "icon.ico"
+  Delete "$INSTDIR\icon.ico"
   File "../../LICENSE.txt"
   File "../../README.txt"
 
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\icon.ico"
+  Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${ICONFILE}"
+  ; Refresh a desktop shortcut left by an earlier version, even if the
+  ; desktop shortcut option is unticked this time.
+  ${If} ${FileExists} "$DESKTOP\${APPNAME}.lnk"
+    Delete "$DESKTOP\${APPNAME}.lnk"
+    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${ICONFILE}"
+  ${EndIf}
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\Uninstall.exe"
 
   ; Allow network sharing on private (home) networks only. Nothing listens
@@ -93,7 +105,7 @@ Section "${APPNAME} (required)" SecMain
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${APPNAME}"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "Homebox Desktop"
-  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\icon.ico"
+  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\${ICONFILE}"
   WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNINSTKEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKLM "${UNINSTKEY}" "URLInfoAbout" "https://homebox.software"
@@ -113,7 +125,14 @@ SectionEnd
 
 Section "Desktop shortcut" SecDesktop
   SetShellVarContext all
-  CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\icon.ico"
+  Delete "$DESKTOP\${APPNAME}.lnk"
+  CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${ICONFILE}"
+SectionEnd
+
+Section "-Refresh icons"
+  ; Ask Windows to redraw shortcut and taskbar icons straight away.
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  nsExec::Exec '"$SYSDIR\ie4uinit.exe" -show'
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -127,6 +146,7 @@ Section "Uninstall"
   Sleep 800
 
   Delete "$INSTDIR\${EXENAME}"
+  Delete "$INSTDIR\${ICONFILE}"
   Delete "$INSTDIR\icon.ico"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\README.txt"
