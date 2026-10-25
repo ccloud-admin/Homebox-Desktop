@@ -389,6 +389,31 @@ func engineLogin(base, hostHeader, email, password string) ([]string, error) {
 	}
 }
 
+// engineResetPassword sets a new password using a token from Homebox's
+// password reset.
+func engineResetPassword(base, token, password string) error {
+	body, _ := json.Marshal(map[string]string{"token": token, "password": password})
+	req, _ := http.NewRequest(http.MethodPost, base+"/api/v1/users/reset-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 == 2 {
+		return nil
+	}
+	var e struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&e)
+	if e.Error != "" {
+		return fmt.Errorf("Homebox couldn't set the password: %s", e.Error)
+	}
+	return fmt.Errorf("Homebox couldn't set the password (%s)", resp.Status)
+}
+
 func engineRegister(base, name, email, password string) error {
 	body, _ := json.Marshal(map[string]string{"name": name, "email": email, "password": password})
 	req, _ := http.NewRequest(http.MethodPost, base+"/api/v1/users/register", bytes.NewReader(body))

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0
+
+- Importing from a Homebox server now opens an Import page. Choose which collections to bring across (all are ticked to start with), and either use one of the server's accounts or create a fresh login, then set a new password. The server's old password isn't needed, so data can be brought across even if it's been forgotten or the server used single sign-on.
+- Homebox Desktop keeps a single login: it owns every imported collection, and the server's other accounts aren't brought across. Collections stay separate, just like on the server.
+- The whole import is done on a copy first, including bringing the data up to date and setting the password. If any step fails, nothing on this PC changes and the Import page stays open to try again.
+- Server settings such as notifiers, API keys and pending invitations are no longer carried over.
+
 ## 1.3.0
 
 - Import from a Homebox server. People who ran Homebox themselves, for example in Docker, can bring their whole inventory across by choosing the server's copied data folder (or a zip of it): items, photos, documents and accounts. Data from any Homebox version is supported, including the original Homebox; it's brought up to date the first time it opens.

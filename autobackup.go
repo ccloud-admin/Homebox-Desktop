@@ -255,7 +255,7 @@ func (a *App) recordAutoBackup(path string, err error, notify bool) {
 // which screen the window shows
 
 // StartScreenLoaded is called by the start screen each time it loads. It
-// returns which view to show ("" or "backups").
+// returns which view to show ("", "backups" or "import").
 func (a *App) StartScreenLoaded() string {
 	a.viewMu.Lock()
 	defer a.viewMu.Unlock()

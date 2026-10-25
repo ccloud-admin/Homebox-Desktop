@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -237,33 +238,57 @@ func locateDatabase(dir string) (root, name string, err error) {
 	}
 }
 
-// installServerData copies the server's data into a staging folder and
-// swaps it in place of the current data (which is kept as a safety copy).
-func installServerData(p Paths, sd *serverData, progress copyProgress) (string, error) {
-	staging := filepath.Join(p.DataDir, ".data.importing")
-	_ = os.RemoveAll(staging)
-	if err := os.MkdirAll(staging, 0o700); err != nil {
-		return "", err
+// stageServerData copies the server's data into dir/.data, the way Homebox
+// Desktop lays it out (the database is always called homebox.db).
+func stageServerData(sd *serverData, dir string, progress copyProgress) error {
+	dataDir := filepath.Join(dir, ".data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return err
 	}
 	for i, rel := range sd.Files {
 		dst := rel
-		// The database is always called homebox.db in Homebox Desktop.
 		if strings.HasPrefix(rel, sd.DBName) && !strings.ContainsRune(rel, filepath.Separator) {
 			dst = "homebox.db" + strings.TrimPrefix(rel, sd.DBName)
 		}
-		if _, _, err := copyFileHashed(filepath.Join(sd.Root, rel), filepath.Join(staging, dst)); err != nil {
-			_ = os.RemoveAll(staging)
-			return "", fmt.Errorf("could not copy %s: %w", rel, err)
+		if _, _, err := copyFileHashed(filepath.Join(sd.Root, rel), filepath.Join(dataDir, dst)); err != nil {
+			return fmt.Errorf("could not copy %s: %w", rel, err)
 		}
 		if progress != nil {
 			progress(i+1, len(sd.Files))
 		}
 	}
-	return swapInData(p, staging, "Before import")
+	return nil
 }
 
 // ---------------------------------------------------------------------------
 // the import flow
+//
+//  1. The user picks the server's data folder (or a zip of it). It is checked
+//     and its collections and accounts are listed on the Import page.
+//  2. They choose collections and a login, and set a password.
+//  3. The data is copied to a temporary folder and a separate, temporary
+//     Homebox upgrades it there. The unchosen collections and other accounts
+//     are removed, and the password is set through Homebox's own reset.
+//  4. Only then is the copy swapped in for the live data (which is kept as a
+//     safety copy). If anything fails before that, the live data was never
+//     touched.
+
+type pendingImport struct {
+	sd      *serverData
+	preview ServerPreview
+}
+
+// ImportPage is everything the Import page shows.
+type ImportPage struct {
+	Source           string             `json:"source"`
+	Documents        int                `json:"documents"`
+	Size             string             `json:"size"`
+	Warning          string             `json:"warning"`
+	Collections      []ServerCollection `json:"collections"`
+	Accounts         []ServerAccount    `json:"accounts"`
+	Suggested        string             `json:"suggested"`
+	ReplacesExisting bool               `json:"replacesExisting"`
+}
 
 // ImportFromServer is started from the welcome screen.
 func (a *App) ImportFromServer(zipFile bool) { go a.importServer(zipFile) }
@@ -272,6 +297,23 @@ func (a *App) ImportFromServer(zipFile bool) { go a.importServer(zipFile) }
 func (a *App) ImportServerFolder() { a.importServer(false) }
 func (a *App) ImportServerZip()    { a.importServer(true) }
 
+func (a *App) setPendingImport(pi *pendingImport) {
+	a.importMu.Lock()
+	old := a.pendingImport
+	a.pendingImport = pi
+	a.importMu.Unlock()
+	if old != nil && old != pi {
+		old.sd.Close()
+	}
+}
+
+func (a *App) getPendingImport() *pendingImport {
+	a.importMu.Lock()
+	defer a.importMu.Unlock()
+	return a.pendingImport
+}
+
+// importServer lets the user pick the server data and opens the Import page.
 func (a *App) importServer(fromZip bool) {
 	if !a.opMu.TryLock() {
 		a.info("Please wait", "Homebox is busy with another task. Try again when it has finished.")
@@ -305,70 +347,225 @@ func (a *App) importServer(fromZip bool) {
 		a.showStartScreen()
 		sd, err = findServerData(dir)
 	}
+	var pv ServerPreview
+	if err == nil {
+		a.setState(State{Phase: "busy", Title: "Checking the server data", Message: "Reading the collections and accounts…", Progress: -1})
+		pv, err = readServerPreview(sd, a.paths.TempDir)
+	}
 	if err != nil {
+		if sd != nil {
+			sd.Close()
+		}
 		a.logf("server import check failed: %v", err)
 		a.fail("Can't import this data", err)
 		a.backToCurrentState()
 		return
 	}
-	defer sd.Close()
-
-	if !a.ask("Import from your Homebox server", a.importSummary(sd)) {
-		a.backToCurrentState()
-		return
-	}
-
-	prev := a.settings.Get()
-	resume := a.pauseForOperation("Importing", "Pausing Homebox…")
-	safety, err := installServerData(a.paths, sd, a.busyProgress("Importing", "Copied"))
-	if err != nil {
-		a.logf("server import failed: %v", err)
-		_ = resume("Reopening Homebox")
-		a.fail("Import failed", fmt.Errorf("%w\n\nNothing was changed.", err))
-		return
-	}
-	a.logf("imported server data from %s (%d files, %s); safety copy at %s", sd.Root, len(sd.Files), humanBytes(sd.TotalBytes), safety)
-
-	// The server's accounts come with the data; sign in with one of them.
-	_ = a.settings.Update(func(s *Settings) {
-		s.AccountEmail = unknownAccount
-		s.AccountName = ""
-		s.SavedPassword = ""
-	})
-	a.setView("")
-
-	// The first start upgrades the imported database to this Homebox's
-	// version; if that fails, the import is undone.
-	if err := a.startEngine("Updating your imported data"); err != nil {
-		a.logf("engine could not open imported data: %v", err)
-		a.undoImport(prev, safety)
-		a.fail("Import undone", fmt.Errorf("Homebox couldn't open the imported data, so your previous data has been put back.\n\n"+
-			"If your server ran a newer Homebox than this app has, choose Help > Check for updates and try again.\n\nDetails:\n%v", err))
-		return
-	}
-	a.afterEngineStart()
-	note := ""
-	if safety != "" && prev.AccountEmail != "" {
-		note = "\n\nYour previous data was kept as a safety copy in:\n" + safety
-	}
-	go a.info("Import complete", "Your inventory from the server is now in Homebox Desktop.\n\n"+
-		"Sign in with the email and password you used on your server. If you've forgotten the password, use \"Forgot your password?\" on the sign-in screen."+note)
+	a.logf("server data found at %s: %d collections, %d accounts", sd.Root, len(pv.Collections), len(pv.Accounts))
+	a.setPendingImport(&pendingImport{sd: sd, preview: pv})
+	a.setView("import")
+	a.backToCurrentState()
 }
 
-func (a *App) importSummary(sd *serverData) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Import the Homebox data from:\n%s\n\n", sd.Root)
-	fmt.Fprintf(&b, "Database: %s\nPhotos and documents: %d files\nTotal: %s\n", sd.DBName, sd.Documents, humanBytes(sd.TotalBytes))
+// GetImportPage returns what the Import page shows.
+func (a *App) GetImportPage() (ImportPage, error) {
+	pi := a.getPendingImport()
+	if pi == nil {
+		return ImportPage{}, errors.New("choose the server's data folder again")
+	}
+	sd := pi.sd
+	pg := ImportPage{
+		Source: sd.Root, Documents: sd.Documents, Size: humanBytes(sd.TotalBytes),
+		Collections: pi.preview.Collections, Accounts: pi.preview.Accounts,
+		Suggested:        pi.preview.suggestedAccount(),
+		ReplacesExisting: hasData(a.paths) && a.settings.Get().AccountEmail != "",
+	}
+	if pg.Accounts == nil {
+		pg.Accounts = []ServerAccount{}
+	}
 	if sd.Referenced > 0 && sd.Documents == 0 {
-		b.WriteString("\nWarning: the database refers to photos and documents, but none are in this folder. Items will be imported without them. To include them, copy the whole data folder from the server, including the folders with long names.\n")
+		pg.Warning = "The database refers to photos and documents, but none are in this folder, so items will come across without them. To include them, copy the whole data folder from the server, including the folders with long names."
 	} else if sd.Missing > 0 && sd.Missing*5 > sd.Referenced {
-		fmt.Fprintf(&b, "\nWarning: about %d photos or documents the database mentions aren't in this folder, so they won't show in Homebox.\n", sd.Missing)
+		pg.Warning = fmt.Sprintf("About %d photos or documents the database mentions aren't in this folder, so they won't show in Homebox.", sd.Missing)
 	}
-	if hasData(a.paths) && a.settings.Get().AccountEmail != "" {
-		b.WriteString("\nEverything currently in Homebox on this PC will be replaced. A safety copy of the current data is kept in the Homebox Desktop folder.\n")
+	return pg, nil
+}
+
+// CancelImport closes the Import page.
+func (a *App) CancelImport() {
+	a.setPendingImport(nil)
+	a.setView("")
+}
+
+// RunImport imports the server data with the user's choices.
+func (a *App) RunImport(plan ImportPlan) error {
+	pi := a.getPendingImport()
+	if pi == nil {
+		return errors.New("choose the server's data folder again")
 	}
-	b.WriteString("\nYour server's folder is only read, never changed. Afterwards, sign in with the email and password you used on your server.")
-	return b.String()
+	if err := validatePlan(pi.preview, &plan); err != nil {
+		return err
+	}
+	if !a.opMu.TryLock() {
+		return errors.New("Homebox is busy with another task; try again in a moment")
+	}
+	defer a.opMu.Unlock()
+	if err := a.runImport(pi, plan); err != nil {
+		a.logf("server import failed: %v", err)
+		a.backToCurrentState()
+		return err
+	}
+	return nil
+}
+
+func validatePlan(pv ServerPreview, plan *ImportPlan) error {
+	known := map[string]bool{}
+	for _, c := range pv.Collections {
+		known[c.ID] = true
+	}
+	var chosen []string
+	for _, id := range plan.Collections {
+		if known[id] {
+			chosen = append(chosen, id)
+		}
+	}
+	if len(chosen) == 0 {
+		return errors.New("choose at least one collection to import")
+	}
+	plan.Collections = chosen
+	if plan.AccountID != "" {
+		found := false
+		for _, acc := range pv.Accounts {
+			if acc.ID == plan.AccountID {
+				found = true
+				plan.Name, plan.Email = acc.Name, acc.Email
+			}
+		}
+		if !found {
+			return errors.New("choose one of the accounts from the server, or create a fresh login")
+		}
+	} else {
+		plan.Name, plan.Email = strings.TrimSpace(plan.Name), strings.TrimSpace(plan.Email)
+		if plan.Name == "" {
+			return errors.New("enter your name")
+		}
+		if !strings.Contains(plan.Email, "@") {
+			return errors.New("enter a valid email address")
+		}
+	}
+	if len(plan.Password) < 6 {
+		return errors.New("the password must be at least 6 characters")
+	}
+	return nil
+}
+
+func (a *App) runImport(pi *pendingImport, plan ImportPlan) error {
+	work := filepath.Join(a.paths.DataDir, "import-work")
+	_ = os.RemoveAll(work)
+	defer os.RemoveAll(work)
+
+	title := "Importing"
+	a.setState(State{Phase: "busy", Title: title, Message: "Copying the server data…", Progress: -1})
+	if err := stageServerData(pi.sd, work, a.busyProgress(title, "Copied")); err != nil {
+		return err
+	}
+
+	// A separate Homebox upgrades the copy to the current version.
+	a.setState(State{Phase: "busy", Title: title, Message: "Bringing the data up to date. This can take a minute for a large inventory…", Progress: -1})
+	tmp := NewEngineIn(a.paths, a.settings, work, "homebox-import.log")
+	if err := tmp.Start(EngineConfig{}); err != nil {
+		return fmt.Errorf("Homebox couldn't open the server's data. If your server ran a newer Homebox than this app has, choose Help > Check for updates and try again.\n\nDetails: %v", err)
+	}
+	_ = tmp.Stop()
+
+	// Keep the chosen collections and one login.
+	a.setState(State{Phase: "busy", Title: title, Message: "Setting up your collections and login…", Progress: -1})
+	dbPath := filepath.Join(work, ".data", "homebox.db")
+	_, email, removed, err := applyImportPlan(dbPath, plan)
+	if err != nil {
+		return err
+	}
+	if len(removed) > 0 {
+		refs, _ := referencedCollectionFolders(dbPath)
+		for _, gid := range removed {
+			if !refs[strings.ToLower(gid)] {
+				_ = os.RemoveAll(filepath.Join(work, ".data", gid))
+			}
+		}
+	}
+
+	// Set the password with Homebox's own password reset.
+	a.setState(State{Phase: "busy", Title: title, Message: "Setting your password…", Progress: -1})
+	if err := tmp.Start(EngineConfig{}); err != nil {
+		return fmt.Errorf("Homebox couldn't open the adjusted data: %v", err)
+	}
+	err = setPasswordViaReset(tmp, email, plan.Password)
+	_ = tmp.Stop()
+	if err != nil {
+		return err
+	}
+
+	// Swap the prepared data in.
+	prev := a.settings.Get()
+	a.stopWatch()
+	a.gw.Pause("Importing…")
+	_ = a.engine.Stop()
+	safety, err := swapInData(a.paths, filepath.Join(work, ".data"), "Before import")
+	if err != nil {
+		if serr := a.startEngine("Reopening Homebox"); serr == nil {
+			a.afterEngineStart()
+		}
+		return err
+	}
+	a.logf("imported server data from %s into %s (%d collections, %d removed); safety copy at %s",
+		pi.sd.Root, email, len(plan.Collections), len(removed), safety)
+	if err := a.settings.SetCredentials(plan.Name, email, plan.Password); err != nil {
+		a.logf("could not save the login: %v", err)
+	}
+	if err := a.startEngine("Opening your imported inventory"); err != nil {
+		a.undoImport(prev, safety)
+		return fmt.Errorf("Homebox couldn't open the imported data, so your previous data has been put back.\n\nDetails: %v", err)
+	}
+	a.setPendingImport(nil)
+	a.setView("")
+	a.afterEngineStart()
+
+	note := fmt.Sprintf("Your inventory from the server is now in Homebox Desktop, and you're signed in as %s.", email)
+	if n := len(pi.preview.Accounts) - boolInt(plan.AccountID != ""); n > 0 {
+		note += "\n\nThe other server accounts weren't brought across. Everything in the collections you chose belongs to this login."
+	}
+	if safety != "" && prev.AccountEmail != "" {
+		note += "\n\nYour previous data was kept as a safety copy in:\n" + safety
+	}
+	go a.info("Import complete", note)
+	return nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// setPasswordViaReset asks Homebox for a password reset link for the login
+// and uses it straight away, then checks the new password works.
+func setPasswordViaReset(e *Engine, email, password string) error {
+	link, err := e.ResetPasswordLink(email, e.BaseURL())
+	if err != nil {
+		return fmt.Errorf("Homebox couldn't prepare the new password: %w", err)
+	}
+	u, err := url.Parse(link)
+	if err != nil || u.Query().Get("token") == "" {
+		return errors.New("Homebox returned an unexpected password reset link")
+	}
+	if err := engineResetPassword(e.BaseURL(), u.Query().Get("token"), password); err != nil {
+		return err
+	}
+	if _, err := engineLogin(e.BaseURL(), "", email, password); err != nil {
+		return fmt.Errorf("the new password didn't work: %w", err)
+	}
+	return nil
 }
 
 // undoImport puts the previous data and settings back after an import that

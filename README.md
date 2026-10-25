@@ -82,7 +82,7 @@ Homebox Desktop checks every file before restoring. It replaces what's currently
 
 ## Moving from a Homebox server (Docker)
 
-If you've been running Homebox yourself, for example in Docker on a home server or NAS, you can bring everything across: items, locations, labels, photos, receipts, documents and accounts. This works with data from any Homebox version, including the original Homebox before it moved to its current home.
+If you've been running Homebox yourself, for example in Docker on a home server or NAS, you can bring your inventory across: items, locations, labels, photos, receipts and documents. This works with data from any Homebox version, including the original Homebox before it moved to its current home. You don't need your old password.
 
 ### 1. Copy the data folder from the server
 
@@ -100,16 +100,21 @@ The folder contains `homebox.db` and one or more folders with long names (such a
 
 1. Open Homebox Desktop. On the welcome screen, under **From a Homebox server**, click **Data folder...** (or **Zip file...** if you zipped it). If you've already set up Homebox Desktop, use **File > Import from a Homebox server** instead.
 2. Choose the folder you copied. It's fine to choose the folder above it; the app finds the data inside.
-3. Check the summary and click **Yes**.
-4. Homebox brings the data up to date the first time it opens it, which can take a minute for a large inventory.
-5. Sign in with the **same email and password you used on your server**. If you've forgotten the password, click **Forgot your password?**.
+3. The **Import** page lists the collections on the server. They're all ticked; untick any you don't want. Each collection stays separate, just like on the server.
+4. Choose your login. Homebox Desktop has a single login, which owns every collection you bring across:
+   - **Use an account from the server** keeps that account's name and email. Pick it from the list.
+   - **Create a fresh login** lets you enter a new name and email instead.
+5. Enter a new password (twice) and click **Import**. You don't need the server's password, even if you've forgotten it or signed in with single sign-on.
+6. Homebox brings the data up to date, which can take a minute for a large inventory, then opens signed in.
 
 Good to know:
 
+- The other accounts on the server aren't brought across. Everything in the collections you chose belongs to your login.
 - Your server's folder is only read, never changed, so you can keep using the server until you're happy.
+- All the work is done on a copy. If anything goes wrong, nothing on this PC changes and you can try again.
 - If Homebox Desktop already had an inventory, it is replaced, and a safety copy of it is kept first.
-- If Homebox can't open the imported data, the import is undone automatically and your previous data is put back. This can happen if your server ran a newer Homebox than Homebox Desktop has; choose **Help > Check for updates** and try again.
-- Settings that lived only on the server, such as its email settings or API keys, don't carry over. Your items, photos and accounts do.
+- If Homebox can't open the server's data, this can be because your server ran a newer Homebox than Homebox Desktop has. Choose **Help > Check for updates** and try again.
+- Settings that lived only on the server, such as its email settings, notifiers or API keys, don't carry over. Your items, photos and documents do.
 
 ### If your server used PostgreSQL
 

@@ -37,8 +37,10 @@ MOVING FROM A HOMEBOX SERVER (DOCKER)
   Stop Homebox on the server and copy its whole data folder (mounted at
   /data in Docker) to this PC. Then click "Data folder..." under "From a
   Homebox server" on the welcome screen, or use File > Import from a
-  Homebox server. Sign in with the email and password from your server.
-  The server's folder is only read, never changed.
+  Homebox server. Choose which collections to bring across, then either
+  use one of the server's accounts or create a fresh login, and set a new
+  password. You don't need the server's password. The server's folder is
+  only read, never changed.
 
 SHARING ON YOUR HOME NETWORK
   Sharing > Share on my home network lets phones and other computers on the

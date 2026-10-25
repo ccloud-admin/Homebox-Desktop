@@ -13,7 +13,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.3.0"
+var appVersion = "1.4.0"
 
 // unknownAccount marks restored data whose account email isn't known yet.
 const unknownAccount = "(unknown)"
@@ -55,6 +55,9 @@ type App struct {
 	onStartScreen bool
 
 	lastBackupAsk time.Time
+
+	importMu      sync.Mutex
+	pendingImport *pendingImport
 
 	fatal error
 }

@@ -48,6 +48,8 @@ type EngineConfig struct {
 type Engine struct {
 	paths    Paths
 	settings *settingsStore
+	dir      string // working folder; the data lives in dir/.data
+	logName  string // log file name inside the logs folder
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -57,7 +59,13 @@ type Engine struct {
 }
 
 func NewEngine(p Paths, st *settingsStore) *Engine {
-	return &Engine{paths: p, settings: st}
+	return &Engine{paths: p, settings: st, dir: p.DataDir, logName: "homebox.log"}
+}
+
+// NewEngineIn runs a separate Homebox on another data folder (dir/.data),
+// for preparing an import without touching the live data.
+func NewEngineIn(p Paths, st *settingsStore, dir, logName string) *Engine {
+	return &Engine{paths: p, settings: st, dir: dir, logName: logName}
 }
 
 func (e *Engine) Installed() (EngineInfo, bool) { return readEngineInfo(e.paths) }
@@ -130,8 +138,8 @@ func (e *Engine) Start(cfg EngineConfig) error {
 		return err
 	}
 
-	logPath := filepath.Join(e.paths.LogsDir, "homebox.log")
-	_ = os.Rename(logPath, filepath.Join(e.paths.LogsDir, "homebox.previous.log"))
+	logPath := filepath.Join(e.paths.LogsDir, e.logName)
+	_ = os.Rename(logPath, filepath.Join(e.paths.LogsDir, strings.TrimSuffix(e.logName, ".log")+".previous.log"))
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		e.mu.Unlock()
@@ -139,7 +147,7 @@ func (e *Engine) Start(cfg EngineConfig) error {
 	}
 
 	cmd := exec.Command(bin)
-	cmd.Dir = e.paths.DataDir
+	cmd.Dir = e.dir
 	cmd.Env = e.env(cfg, port)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -234,7 +242,7 @@ func (e *Engine) Exited() <-chan struct{} {
 }
 
 func (e *Engine) LogTail(lines int) string {
-	b, err := os.ReadFile(filepath.Join(e.paths.LogsDir, "homebox.log"))
+	b, err := os.ReadFile(filepath.Join(e.paths.LogsDir, e.logName))
 	if err != nil {
 		return ""
 	}
@@ -249,7 +257,7 @@ func (e *Engine) LogTail(lines int) string {
 // one-time password reset link for an account.
 func (e *Engine) ResetPasswordLink(email, publicURL string) (string, error) {
 	cmd := exec.Command(e.paths.EngineBinary(), "reset-password", "--email="+email)
-	cmd.Dir = e.paths.DataDir
+	cmd.Dir = e.dir
 	cmd.Env = e.env(EngineConfig{PublicURL: publicURL}, 0)
 	hideChildWindow(cmd)
 	out, err := cmd.Output()

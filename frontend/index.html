@@ -121,6 +121,20 @@
   .list-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
   .check { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; font-size: 14px; cursor: pointer; }
   button.danger { background: var(--danger); color: #fff; }
+  /* Import page */
+  .im-src { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; margin: 6px 0 0; }
+  .warn { background: var(--danger-soft); color: var(--danger); border-radius: 9px; padding: 9px 12px; margin-top: 14px; font-size: 13.5px; }
+  .im-step { font-size: 16px; margin: 0 0 4px; font-weight: 650; }
+  .im-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; margin: 0; font-weight: 500; font-size: 15px; }
+  .im-row:first-child { border-top: none; }
+  .im-row.selected { background: var(--accent-soft); }
+  .im-row input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .im-row .bk-main { cursor: pointer; }
+  .choice { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 0; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+  .choice input { width: 18px; height: 18px; flex: none; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+  .choice .hint { font-weight: 400; margin-top: 2px; }
+  .sub { margin: 4px 0 0 28px; }
+  .sub[hidden] { display: none; }
   @media (prefers-color-scheme: dark) { button.danger { color: #1b1a18; } }
   @media (max-width: 560px) {
     .folder-row { flex-wrap: wrap; }
@@ -185,7 +199,7 @@
         </div>
         <div class="have-block">
           <div class="t-title">From a Homebox server</div>
-          <p class="hint">Import the data folder copied from a self-hosted Homebox, such as Docker (the folder mounted at <code>/data</code>). Your items, photos, documents and accounts come across.</p>
+          <p class="hint">Import the data folder copied from a self-hosted Homebox, such as Docker (the folder mounted at <code>/data</code>). Your items, photos and documents come across, and you choose which collections to bring.</p>
           <div class="row">
             <button class="secondary" type="button" data-import="folder">Data folder…</button>
             <button class="secondary" type="button" data-import="zip">Zip file…</button>
@@ -276,23 +290,80 @@
     </div>
   </section>
 
+  <!-- import from a Homebox server -->
+  <section id="v-import" hidden>
+    <div class="bk-head">
+      <h1>Import from a Homebox server</h1>
+    </div>
+    <p class="im-src" id="m-src"></p>
+    <div class="warn" id="m-warn" hidden></div>
+
+    <form id="f-import" autocomplete="off">
+      <div class="panel">
+        <h2 class="im-step">1. Collections to bring across</h2>
+        <p class="hint" style="margin:0 0 12px">Each collection stays separate, just like on the server.</p>
+        <div class="list" id="m-cols"></div>
+      </div>
+
+      <div class="panel">
+        <h2 class="im-step">2. Your login</h2>
+        <p class="hint" style="margin:0">Homebox Desktop has a single login. The other server accounts aren't brought across, and all the items in the collections you chose will belong to this login.</p>
+
+        <label class="choice" id="m-use-wrap"><input type="radio" name="m-who" value="account" id="m-use">
+          <span>Use an account from the server<div class="hint">Keeps its name and email. You set a new password below, so you don't need the old one.</div></span></label>
+        <div class="sub" id="m-use-sub">
+          <select id="m-account" aria-label="Server account"></select>
+        </div>
+
+        <label class="choice"><input type="radio" name="m-who" value="fresh" id="m-fresh">
+          <span>Create a fresh login<div class="hint">Start with a new name and email.</div></span></label>
+        <div class="sub" id="m-fresh-sub">
+          <label for="m-name">Your name</label>
+          <input id="m-name">
+          <label for="m-email">Email</label>
+          <input id="m-email" type="email">
+        </div>
+
+        <div class="row stack">
+          <div>
+            <label for="m-pass">New password</label>
+            <input id="m-pass" type="password" minlength="6" required>
+          </div>
+          <div>
+            <label for="m-pass2">Confirm password</label>
+            <input id="m-pass2" type="password" minlength="6" required>
+          </div>
+        </div>
+        <div class="hint">At least 6 characters. Homebox Desktop remembers it securely on this PC.</div>
+      </div>
+
+      <div class="note show" id="m-replace" hidden>Your current inventory on this PC will be replaced. A safety copy of it is kept first.</div>
+      <div class="error" id="m-err"></div>
+      <div class="actions inline">
+        <button type="submit" id="m-btn">Import</button>
+        <button type="button" class="secondary" id="m-cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+
   <div class="foot" id="foot"></div>
 </main>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const views = ["progress", "setup", "signin", "error", "backups"];
+  const views = ["progress", "setup", "signin", "error", "backups", "import"];
   let navigating = false;
   let current = null;
-  let view = "";      // "" or "backups"
+  let view = "";      // "", "backups" or "import"
   let page = null;    // latest Backups page data
+  let importPage = null; // the Import page data, loaded once per import
 
   const api = () => window.go && window.go.main && window.go.main.App;
 
   function show(name) {
     for (const v of views) $("v-" + v).hidden = v !== name;
-    document.querySelector("main.card").classList.toggle("wide", name === "backups");
+    document.querySelector("main.card").classList.toggle("wide", name === "backups" || name === "import");
     document.querySelector("main.card").classList.toggle("setup", name === "setup");
   }
 
@@ -318,6 +389,10 @@
     current = s;
     if (view === "backups" && (s.phase === "ready" || s.phase === "setup" || s.phase === "signin")) {
       showBackups();
+      return;
+    }
+    if (view === "import" && (s.phase === "ready" || s.phase === "setup" || s.phase === "signin")) {
+      showImport();
       return;
     }
     switch (s.phase) {
@@ -607,7 +682,136 @@
     await api().CloseBackups();
   });
 
+  // ----------------------------------------------------------------- import
+
+  function setImportError(msg) {
+    const el = $("m-err");
+    el.textContent = msg || "";
+    el.classList.toggle("show", !!msg);
+  }
+
+  async function showImport() {
+    show("import");
+    if (importPage) return; // keep what the user has typed and ticked
+    try {
+      importPage = await api().GetImportPage();
+      fillImport(importPage);
+    } catch (e) {
+      setImportError(errText(e));
+    }
+  }
+
+  function fillImport(p) {
+    $("m-src").textContent = "From " + p.source + " · " + p.documents + (p.documents === 1 ? " photo or document, " : " photos and documents, ") + p.size;
+    $("m-warn").textContent = p.warning || "";
+    $("m-warn").hidden = !p.warning;
+    $("m-replace").hidden = !p.replacesExisting;
+    setImportError("");
+
+    const cols = $("m-cols");
+    cols.textContent = "";
+    for (const c of p.collections) {
+      const row = document.createElement("label");
+      row.className = "im-row selected";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = c.id;
+      cb.checked = true;
+      cb.addEventListener("change", updateImport);
+      const main = document.createElement("div");
+      main.className = "bk-main";
+      const name = document.createElement("div");
+      name.className = "bk-when";
+      name.textContent = c.name || "Unnamed collection";
+      const meta = document.createElement("div");
+      meta.className = "bk-meta";
+      const who = p.accounts.filter((a) => a.collections.includes(c.id)).map((a) => a.name || a.email);
+      meta.textContent = [
+        c.items + (c.items === 1 ? " item" : " items"),
+        c.locations + (c.locations === 1 ? " location" : " locations"),
+        who.length ? "used by " + who.join(", ") : "",
+      ].filter(Boolean).join(" · ");
+      main.append(name, meta);
+      row.append(cb, main);
+      cols.append(row);
+    }
+
+    const sel = $("m-account");
+    sel.textContent = "";
+    for (const a of p.accounts) {
+      const label = (a.name ? a.name + " (" + a.email + ")" : a.email) + (a.owner ? ", owner" : "");
+      sel.add(new Option(label, a.id));
+    }
+    const hasAccounts = p.accounts.length > 0;
+    $("m-use-wrap").hidden = !hasAccounts;
+    if (hasAccounts) {
+      sel.value = p.suggested || p.accounts[0].id;
+      $("m-use").checked = true;
+    } else {
+      $("m-fresh").checked = true;
+    }
+    $("m-name").value = "";
+    $("m-email").value = "";
+    $("m-pass").value = "";
+    $("m-pass2").value = "";
+    updateImport();
+  }
+
+  function chosenCollections() {
+    return [...document.querySelectorAll("#m-cols input[type=checkbox]:checked")].map((c) => c.value);
+  }
+
+  function updateImport() {
+    document.querySelectorAll("#m-cols input[type=checkbox]").forEach((c) =>
+      c.closest(".im-row").classList.toggle("selected", c.checked));
+    const fresh = $("m-fresh").checked;
+    $("m-use-sub").hidden = fresh || $("m-use-wrap").hidden;
+    $("m-fresh-sub").hidden = !fresh;
+    $("m-name").required = fresh;
+    $("m-email").required = fresh;
+    const n = chosenCollections().length;
+    $("m-btn").disabled = n === 0;
+    $("m-btn").textContent = !importPage || n === importPage.collections.length || n === 0
+      ? "Import"
+      : "Import " + n + (n === 1 ? " collection" : " collections");
+  }
+
+  $("m-use").addEventListener("change", updateImport);
+  $("m-fresh").addEventListener("change", updateImport);
+
+  $("f-import").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    setImportError("");
+    const collections = chosenCollections();
+    if (!collections.length) { setImportError("Choose at least one collection to import."); return; }
+    if ($("m-pass").value !== $("m-pass2").value) { setImportError("The two passwords don't match."); return; }
+    const fresh = $("m-fresh").checked;
+    const plan = {
+      collections,
+      accountId: fresh ? "" : $("m-account").value,
+      name: fresh ? $("m-name").value : "",
+      email: fresh ? $("m-email").value : "",
+      password: $("m-pass").value,
+    };
+    const btn = $("m-btn");
+    busy(btn, true, "Importing…");
+    $("m-cancel").disabled = true;
+    try {
+      await api().RunImport(plan);
+    } catch (e) {
+      show("import");
+      setImportError(errText(e));
+    } finally {
+      $("m-cancel").disabled = false;
+      btn.disabled = false;
+      updateImport();
+    }
+  });
+
+  $("m-cancel").addEventListener("click", () => api().CancelImport());
+
   function setView(v) {
+    importPage = null; // a new folder may have been chosen
     view = v || "";
     if (current) render(current);
   }
