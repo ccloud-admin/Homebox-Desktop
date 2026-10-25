@@ -28,6 +28,7 @@ Then either:
 
 - **Create your account.** Enter your name, email and a password. This account owns your inventory. You won't be asked for the password again on this PC.
 - **Restore a backup** if you're moving from another PC (see [Moving to a new PC](#moving-to-a-new-pc)).
+- **Import from a Homebox server** if you've been running Homebox yourself, for example in Docker (see [Moving from a Homebox server](#moving-from-a-homebox-server-docker)).
 
 After that, the app opens straight into Homebox every time.
 
@@ -79,6 +80,46 @@ Homebox Desktop checks every file before restoring. It replaces what's currently
 3. On the welcome screen, click **Zip file...** or **Backup folder...** and choose your backup. Or open **File > Backups and automatic backup...**, choose your backup folder and click **Restore...** next to the backup.
 4. Sign in with the same email and password you used before.
 
+## Moving from a Homebox server (Docker)
+
+If you've been running Homebox yourself, for example in Docker on a home server or NAS, you can bring everything across: items, locations, labels, photos, receipts, documents and accounts. This works with data from any Homebox version, including the original Homebox before it moved to its current home.
+
+### 1. Copy the data folder from the server
+
+Homebox keeps everything in one data folder, which Docker mounts at `/data` inside the container.
+
+1. **Stop Homebox** so nothing changes while you copy. In the folder with your `docker-compose.yml`, run `docker compose stop`. Or run `docker stop homebox`, using your container's name (`docker ps -a` lists them).
+2. **Find the data folder.**
+   - If your compose file maps a folder, such as `./homebox-data:/data` or `/mnt/user/appdata/homebox:/data`, the data folder is the one on the left.
+   - If it uses a named volume, such as `homebox-data:/data`, copy it out with `docker cp homebox:/data ./homebox-data`.
+3. **Copy the whole folder** to your Windows PC, for example on a USB drive or over your network. Zipping it first is fine.
+
+The folder contains `homebox.db` and one or more folders with long names (such as `78723c30-7e1c-...`) holding your photos and documents. Copy all of it.
+
+### 2. Import it into Homebox Desktop
+
+1. Open Homebox Desktop. On the welcome screen, under **From a Homebox server**, click **Data folder...** (or **Zip file...** if you zipped it). If you've already set up Homebox Desktop, use **File > Import from a Homebox server** instead.
+2. Choose the folder you copied. It's fine to choose the folder above it; the app finds the data inside.
+3. Check the summary and click **Yes**.
+4. Homebox brings the data up to date the first time it opens it, which can take a minute for a large inventory.
+5. Sign in with the **same email and password you used on your server**. If you've forgotten the password, click **Forgot your password?**.
+
+Good to know:
+
+- Your server's folder is only read, never changed, so you can keep using the server until you're happy.
+- If Homebox Desktop already had an inventory, it is replaced, and a safety copy of it is kept first.
+- If Homebox can't open the imported data, the import is undone automatically and your previous data is put back. This can happen if your server ran a newer Homebox than Homebox Desktop has; choose **Help > Check for updates** and try again.
+- Settings that lived only on the server, such as its email settings or API keys, don't carry over. Your items, photos and accounts do.
+
+### If your server used PostgreSQL
+
+The import above reads Homebox's built-in database. If you set up your server with a PostgreSQL database instead, use Homebox's own backup tool:
+
+1. On your server, open Homebox and go to **Tools > Backup & Restore**, then create a backup and download the zip.
+2. In Homebox Desktop, create your account, then go to **Tools > Backup & Restore** inside Homebox and restore that zip.
+
+This needs a recent Homebox on the server.
+
 ## Using Homebox on your phone
 
 Homebox Desktop can share your inventory with phones, tablets and other computers on the same Wi-Fi:
@@ -129,6 +170,8 @@ Use **Settings > Apps** in Windows, or **Uninstall Homebox Desktop** in the Star
 | "Couldn't download Homebox" on first start | Check your internet connection, then click **Try again**. |
 | The window is blank or won't open | Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/), which comes with most up-to-date Windows PCs, then restart the app. |
 | My phone can't reach the sharing address | Make sure the phone is on the same Wi-Fi and the app is open on the PC. Check that your Wi-Fi is set to **Private** in Windows network settings. |
+| "No Homebox database was found" when importing from a server | Choose the folder that contains `homebox.db`, or the folder above it. If your server used PostgreSQL, see [If your server used PostgreSQL](#if-your-server-used-postgresql). |
+| Photos are missing after importing from a server | The folders with long names weren't copied from the server's data folder. Copy the whole folder and import again. |
 | Something else went wrong | Choose **Help > Show log files**. The files there describe what happened. |
 
 For help with Homebox itself (adding items, locations, labels and so on), see the [Homebox documentation](https://homebox.software/en/).

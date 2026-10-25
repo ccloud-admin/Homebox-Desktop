@@ -28,6 +28,7 @@ Homebox Backup 2026-10-24 1530/
 ```
 
 - **Automatic backups.** `autobackup.go` schedules them and `backup_zip.go` writes them. A zip is written straight from the data folder while the engine is stopped, read back and checked against its manifest, and only then renamed from `.zip.partial` to `.zip`. Scheduled backups run before the engine starts at launch, or while open once the gateway has seen no requests for 5 minutes (the Homebox live-update websocket doesn't count). An overdue backup asks first. Retention only ever touches files named `Homebox Backup *.zip`.
+- **Importing from a server.** `migrate.go` finds a SQLite `homebox.db` (up to three folders down) in a copied Docker `/data` folder or a zip of one. It copies the database (with any `-wal` or `-journal` file, renamed to `homebox.db`) and every subfolder into `.data`, skipping other top-level files such as `.env`. The layout already matches what the engine expects, and the engine's own goose migrations upgrade the database on first start, including pre-goose databases from the original Homebox and their absolute `/data/...` attachment paths. If the engine won't start on the imported data, the previous data and settings are put back and the import is kept in `failed-imports\`. Missing attachments are estimated by matching `<collection>/documents/<file>` strings in the raw database against the copied files.
 - **Updates.** At most once every 20 hours the app checks the latest Homebox release and the latest release of this repository (the repository is passed in at build time with `-X main.desktopRepo=owner/name`). Engine updates take a backup to `auto-backups\` first and roll back if the new engine won't start. App updates download the installer, check it against the release's `SHA256SUMS.txt`, and run it.
 
 ## Building
@@ -74,6 +75,7 @@ The **Release** workflow (`.github/workflows/release.yml`) builds the installer 
 | `proxy.go` | Window and network gateways, automatic sign-in, sign-out detection |
 | `backup.go` | Backup format, verification, zip handling, restore swap |
 | `backup_zip.go`, `autobackup.go` | Zipped backups, listing and retention, scheduler, Backups page |
+| `migrate.go` | Importing a self-hosted (Docker) Homebox data folder |
 | `settings.go`, `dialogs.go` | Paths, settings, file pickers, `desktop.log` |
 | `platform_windows.go` | DPAPI, hidden engine process, job object, installer launch |
 | `frontend/index.html` | Start screen |

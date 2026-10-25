@@ -3,7 +3,7 @@ Unicode true
 ManifestDPIAware true
 
 !ifndef VERSION
-  !define VERSION "1.2.1"
+  !define VERSION "1.3.0"
 !endif
 !ifndef OUTFILE
   !define OUTFILE "HomeboxDesktop-Setup-${VERSION}.exe"

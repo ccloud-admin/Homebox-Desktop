@@ -35,6 +35,10 @@ func main() {
 	if _, err := os.Stat(filepath.Join(".data", "homebox.db")); err != nil {
 		_ = os.WriteFile(filepath.Join(".data", "homebox.db"), []byte("SQLite format 3\x00fake"), 0o644)
 	}
+	if b, _ := os.ReadFile(filepath.Join(".data", "homebox.db")); strings.Contains(string(b), "CORRUPT") {
+		fmt.Fprintln(os.Stderr, "failed to migrate database: file is not a database")
+		os.Exit(1)
+	}
 	if os.Getenv("HBOX_AUTH_API_KEY_PEPPER") == "" {
 		fmt.Fprintln(os.Stderr, "pepper missing")
 		os.Exit(3)

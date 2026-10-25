@@ -33,6 +33,13 @@ AUTOMATIC BACKUPS
   wait until Homebox hasn't been used for a few minutes, or until the app
   next opens, so they don't interrupt you.
 
+MOVING FROM A HOMEBOX SERVER (DOCKER)
+  Stop Homebox on the server and copy its whole data folder (mounted at
+  /data in Docker) to this PC. Then click "Data folder..." under "From a
+  Homebox server" on the welcome screen, or use File > Import from a
+  Homebox server. Sign in with the email and password from your server.
+  The server's folder is only read, never changed.
+
 SHARING ON YOUR HOME NETWORK
   Sharing > Share on my home network lets phones and other computers on the
   same Wi-Fi use Homebox at the address shown in Sharing > Show sharing

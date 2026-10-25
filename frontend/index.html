@@ -65,6 +65,20 @@
   [hidden] { display: none !important; }
   .foot { margin-top: 18px; font-size: 12px; color: var(--muted); text-align: center; }
 
+  /* Welcome screen */
+  .setup-grid { display: grid; grid-template-columns: 1fr; gap: 26px; margin-top: 4px; }
+  .have-data { border-top: 1px solid var(--line); padding-top: 20px; }
+  .have-data h2 { font-size: 16px; margin: 0 0 4px; font-weight: 650; }
+  .have-block { margin-top: 14px; }
+  .have-block .hint { margin: 4px 0 10px; }
+  .have-block + .have-block { margin-top: 20px; }
+  code { font: 12.5px Consolas, "Cascadia Mono", monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+  @media (min-width: 760px) {
+    .card.setup { max-width: 820px; }
+    .setup-grid { grid-template-columns: 1.15fr 1fr; gap: 34px; }
+    .have-data { border-top: none; border-left: 1px solid var(--line); padding: 0 0 0 30px; }
+  }
+
   /* Backups page */
   .card.wide { max-width: 780px; }
   .bk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -142,25 +156,42 @@
   <!-- first run -->
   <section id="v-setup" hidden>
     <h1>Welcome to Homebox</h1>
-    <p class="lead">Create the account that owns your inventory. If you turn on network sharing later, you'll use these details to sign in from your phone.</p>
-    <form id="f-setup" autocomplete="off">
-      <label for="s-name">Your name</label>
-      <input id="s-name" required>
-      <label for="s-email">Email</label>
-      <input id="s-email" type="email" required>
-      <label for="s-pass">Password</label>
-      <input id="s-pass" type="password" minlength="6" required>
-      <label for="s-pass2">Confirm password</label>
-      <input id="s-pass2" type="password" minlength="6" required>
-      <div class="hint">At least 6 characters. Homebox Desktop remembers it securely on this PC, so you won't be asked again here.</div>
-      <div class="error" id="s-err"></div>
-      <div class="actions"><button type="submit" id="s-btn">Create my inventory</button></div>
-    </form>
-    <div class="divider">or</div>
-    <p class="lead" style="margin-bottom:10px">Moving from another PC? Restore a backup instead.</p>
-    <div class="row">
-      <button class="secondary" type="button" data-restore="folder">Backup folder…</button>
-      <button class="secondary" type="button" data-restore="zip">Zip file…</button>
+    <div class="setup-grid">
+      <div>
+        <p class="lead">Start a new inventory by creating the account that owns it. If you turn on network sharing later, you'll use these details to sign in from your phone.</p>
+        <form id="f-setup" autocomplete="off">
+          <label for="s-name">Your name</label>
+          <input id="s-name" required>
+          <label for="s-email">Email</label>
+          <input id="s-email" type="email" required>
+          <label for="s-pass">Password</label>
+          <input id="s-pass" type="password" minlength="6" required>
+          <label for="s-pass2">Confirm password</label>
+          <input id="s-pass2" type="password" minlength="6" required>
+          <div class="hint">At least 6 characters. Homebox Desktop remembers it securely on this PC, so you won't be asked again here.</div>
+          <div class="error" id="s-err"></div>
+          <div class="actions"><button type="submit" id="s-btn">Create my inventory</button></div>
+        </form>
+      </div>
+      <aside class="have-data">
+        <h2>Already using Homebox?</h2>
+        <div class="have-block">
+          <div class="t-title">From another PC</div>
+          <p class="hint">Restore a Homebox Desktop backup, as a folder or a zip.</p>
+          <div class="row">
+            <button class="secondary" type="button" data-restore="folder">Backup folder…</button>
+            <button class="secondary" type="button" data-restore="zip">Zip file…</button>
+          </div>
+        </div>
+        <div class="have-block">
+          <div class="t-title">From a Homebox server</div>
+          <p class="hint">Import the data folder copied from a self-hosted Homebox, such as Docker (the folder mounted at <code>/data</code>). Your items, photos, documents and accounts come across.</p>
+          <div class="row">
+            <button class="secondary" type="button" data-import="folder">Data folder…</button>
+            <button class="secondary" type="button" data-import="zip">Zip file…</button>
+          </div>
+        </div>
+      </aside>
     </div>
   </section>
 
@@ -262,6 +293,7 @@
   function show(name) {
     for (const v of views) $("v-" + v).hidden = v !== name;
     document.querySelector("main.card").classList.toggle("wide", name === "backups");
+    document.querySelector("main.card").classList.toggle("setup", name === "setup");
   }
 
   function errText(e) {
@@ -384,6 +416,8 @@
 
   document.querySelectorAll("[data-restore]").forEach((b) =>
     b.addEventListener("click", () => api().RestoreFromStartScreen(b.dataset.restore === "zip")));
+  document.querySelectorAll("[data-import]").forEach((b) =>
+    b.addEventListener("click", () => api().ImportFromServer(b.dataset.import === "zip")));
 
   $("e-retry").addEventListener("click", () => {
     render({ phase: "starting", title: "Trying again", progress: -1 });

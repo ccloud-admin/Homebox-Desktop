@@ -13,7 +13,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.2.1"
+var appVersion = "1.3.0"
 
 // unknownAccount marks restored data whose account email isn't known yet.
 const unknownAccount = "(unknown)"
@@ -403,19 +403,37 @@ func (a *App) Version() string {
 // ---------------------------------------------------------------------------
 // dialogs
 
+// testDialogs answers dialogs in automated tests (there is no window then).
+var testDialogs func(kind, title, msg string) bool
+
 func (a *App) info(title, msg string) {
+	if testDialogs != nil {
+		testDialogs("info", title, msg)
+		return
+	}
 	_, _ = wruntime.MessageDialog(a.ctx, wruntime.MessageDialogOptions{Type: wruntime.InfoDialog, Title: title, Message: msg})
 }
 
 func (a *App) warn(title, msg string) {
+	if testDialogs != nil {
+		testDialogs("warn", title, msg)
+		return
+	}
 	_, _ = wruntime.MessageDialog(a.ctx, wruntime.MessageDialogOptions{Type: wruntime.WarningDialog, Title: title, Message: msg})
 }
 
 func (a *App) fail(title string, err error) {
+	if testDialogs != nil {
+		testDialogs("fail", title, err.Error())
+		return
+	}
 	_, _ = wruntime.MessageDialog(a.ctx, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: title, Message: err.Error()})
 }
 
 func (a *App) ask(title, msg string) bool {
+	if testDialogs != nil {
+		return testDialogs("ask", title, msg)
+	}
 	res, err := wruntime.MessageDialog(a.ctx, wruntime.MessageDialogOptions{
 		Type: wruntime.QuestionDialog, Title: title, Message: msg,
 		Buttons: []string{"Yes", "No"}, DefaultButton: "No", CancelButton: "No",

@@ -198,54 +198,14 @@ func openBackupFolder(dir string) (*LoadedBackup, error) {
 
 // openBackupZip unpacks a zipped backup into a temporary folder and verifies it.
 func openBackupZip(zipPath, tempParent string) (*LoadedBackup, error) {
-	zr, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return nil, fmt.Errorf("that file is not a readable zip: %w", err)
-	}
-	defer zr.Close()
 	tmp, err := os.MkdirTemp(tempParent, "restore-*")
 	if err != nil {
 		return nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
-	for _, f := range zr.File {
-		name := filepath.FromSlash(strings.ReplaceAll(f.Name, `\`, "/"))
-		target := filepath.Join(tmp, name)
-		if !strings.HasPrefix(target, filepath.Clean(tmp)+string(os.PathSeparator)) {
-			cleanup()
-			return nil, fmt.Errorf("the zip contains an unsafe path: %s", f.Name)
-		}
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				cleanup()
-				return nil, err
-			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			cleanup()
-			return nil, err
-		}
-		rc, err := f.Open()
-		if err != nil {
-			cleanup()
-			return nil, err
-		}
-		out, err := os.Create(target)
-		if err != nil {
-			rc.Close()
-			cleanup()
-			return nil, err
-		}
-		_, err = io.Copy(out, rc)
-		rc.Close()
-		if cerr := out.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			cleanup()
-			return nil, err
-		}
+	if err := unzipTo(zipPath, tmp); err != nil {
+		cleanup()
+		return nil, err
 	}
 	lb, err := openBackupFolder(tmp)
 	if err != nil {
@@ -254,6 +214,54 @@ func openBackupZip(zipPath, tempParent string) (*LoadedBackup, error) {
 	}
 	lb.cleanup = cleanup
 	return lb, nil
+}
+
+// unzipTo extracts a zip into dir, refusing any entry that would land
+// outside it.
+func unzipTo(zipPath, dir string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("that file is not a readable zip: %w", err)
+	}
+	defer zr.Close()
+	root := filepath.Clean(dir) + string(os.PathSeparator)
+	for _, f := range zr.File {
+		name := filepath.FromSlash(strings.ReplaceAll(f.Name, `\`, "/"))
+		target := filepath.Join(dir, name)
+		if !strings.HasPrefix(target, root) {
+			return fmt.Errorf("the zip contains an unsafe path: %s", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		rc.Close()
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+		if !f.Modified.IsZero() {
+			_ = os.Chtimes(target, f.Modified, f.Modified)
+		}
+	}
+	return nil
 }
 
 func findBackupRoot(dir string) (string, error) {
@@ -366,12 +374,20 @@ func installBackupData(p Paths, lb *LoadedBackup, progress copyProgress) (string
 		}
 	}
 
+	return swapInData(p, staging, "Before restore")
+}
+
+// swapInData replaces the live data folder with staging. The current data is
+// moved to a dated safety copy first (named "<label> <date>"), so the change
+// can be undone.
+func swapInData(p Paths, staging, label string) (string, error) {
 	safety := ""
 	if _, err := os.Stat(p.HomeboxData); err == nil {
 		if err := os.MkdirAll(p.SafetyDir, 0o700); err != nil {
+			_ = os.RemoveAll(staging)
 			return "", err
 		}
-		safety = uniquePath(filepath.Join(p.SafetyDir, "Before restore "+time.Now().Format("2006-01-02 150405")))
+		safety = uniquePath(filepath.Join(p.SafetyDir, label+" "+time.Now().Format("2006-01-02 150405")))
 		if err := os.Rename(p.HomeboxData, safety); err != nil {
 			_ = os.RemoveAll(staging)
 			return "", fmt.Errorf("could not set the current data aside: %w", err)
@@ -381,10 +397,30 @@ func installBackupData(p Paths, lb *LoadedBackup, progress copyProgress) (string
 		if safety != "" {
 			_ = os.Rename(safety, p.HomeboxData)
 		}
-		return "", fmt.Errorf("could not put the restored data in place: %w", err)
+		_ = os.RemoveAll(staging)
+		return "", fmt.Errorf("could not put the new data in place: %w", err)
 	}
 	pruneOldest(p.SafetyDir, keepSafety)
 	return safety, nil
+}
+
+// putBackSafetyCopy undoes swapInData: the data now in place is moved to
+// setAside (if given) and the safety copy becomes the live data again.
+func putBackSafetyCopy(p Paths, safety, setAside string) error {
+	if setAside != "" {
+		if err := os.MkdirAll(filepath.Dir(setAside), 0o700); err != nil {
+			return err
+		}
+		if err := os.Rename(p.HomeboxData, setAside); err != nil {
+			return err
+		}
+	} else if err := os.RemoveAll(p.HomeboxData); err != nil {
+		return err
+	}
+	if safety == "" {
+		return nil
+	}
+	return os.Rename(safety, p.HomeboxData)
 }
 
 // ---------------------------------------------------------------------------

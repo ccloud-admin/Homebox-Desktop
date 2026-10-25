@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- Import from a Homebox server. People who ran Homebox themselves, for example in Docker, can bring their whole inventory across by choosing the server's copied data folder (or a zip of it): items, photos, documents and accounts. Data from any Homebox version is supported, including the original Homebox; it's brought up to date the first time it opens.
+- The import checks the folder first and warns if photos or documents seem to be missing. The server's folder is never changed, the current data is kept as a safety copy, and if Homebox can't open the imported data the import is undone automatically.
+- The welcome screen now shows "Already using Homebox?" options side by side with creating a new account: restore a Homebox Desktop backup, or import from a Homebox server. Also available from File > Import from a Homebox server.
+
 ## 1.2.1
 
 - The app window, taskbar, installer, Start menu and desktop shortcuts, and the start screen now use the official Homebox logo.

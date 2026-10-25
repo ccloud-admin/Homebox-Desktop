@@ -872,3 +872,256 @@ func TestQuietScheduledBackupWhileIdle(t *testing.T) {
 		t.Fatal("should not be due right after a backup")
 	}
 }
+
+// makeServerFolder builds a folder like a copied Docker /data volume, inside
+// a parent folder with the compose file next to it.
+func makeServerFolder(t *testing.T, dbName, dbBody string) (parent, data string) {
+	t.Helper()
+	parent = t.TempDir()
+	data = filepath.Join(parent, "homebox", "data")
+	gid := "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf"
+	files := map[string]string{
+		dbName:          sqliteHeader + dbBody + " /data/" + gid + "/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg" + gid + " /data/" + gid + "/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf" + gid,
+		dbName + "-wal": "wal-bytes",
+		dbName + "-shm": "shm-bytes",
+		".env":          "HBOX_SECRET=do-not-copy",
+		"Thumbs.db":     "junk",
+		gid + "/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg": "photo",
+		gid + "/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf": "receipt",
+	}
+	for rel, body := range files {
+		p := filepath.Join(data, filepath.FromSlash(rel))
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(parent, "homebox", "docker-compose.yml"), []byte("services:"), 0o644)
+	return parent, data
+}
+
+func TestFindServerData(t *testing.T) {
+	parent, data := makeServerFolder(t, "homebox.db", "")
+	sd, err := findServerData(parent) // picked the folder above the data folder
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sd.Root != data || sd.DBName != "homebox.db" {
+		t.Fatalf("wrong data folder: %+v", sd)
+	}
+	want := []string{"78723c30-7e1c-4e12-98e6-e3ef5b73f0bf/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg",
+		"78723c30-7e1c-4e12-98e6-e3ef5b73f0bf/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf", "homebox.db", "homebox.db-wal"}
+	got := []string{}
+	for _, f := range sd.Files {
+		got = append(got, filepath.ToSlash(f))
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("files to copy:\n got %v\nwant %v", got, want)
+	}
+	if len(sd.Skipped) != 1 || sd.Skipped[0] != ".env" {
+		t.Fatalf(".env must be left behind, skipped=%v", sd.Skipped)
+	}
+	if sd.Documents != 2 || sd.Referenced != 2 || sd.Missing != 0 {
+		t.Fatalf("documents=%d referenced=%d missing=%d", sd.Documents, sd.Referenced, sd.Missing)
+	}
+
+	// Without its photo folders, the missing files are noticed.
+	_ = os.RemoveAll(filepath.Join(data, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf"))
+	sd, _ = findServerData(data)
+	if sd.Documents != 0 || sd.Missing != 2 {
+		t.Fatalf("expected 2 missing, got %+v", sd)
+	}
+
+	// Not Homebox data at all.
+	if _, err := findServerData(t.TempDir()); err == nil || !strings.Contains(err.Error(), "PostgreSQL") {
+		t.Fatalf("expected a helpful error, got %v", err)
+	}
+	// A file called homebox.db that isn't a database.
+	fake := t.TempDir()
+	_ = os.WriteFile(filepath.Join(fake, "homebox.db"), []byte("not sqlite"), 0o644)
+	if _, err := findServerData(fake); err == nil {
+		t.Fatal("a non-SQLite file must be refused")
+	}
+	// Two databases: ambiguous.
+	two := t.TempDir()
+	for _, d := range []string{"a", "b"} {
+		_ = os.MkdirAll(filepath.Join(two, d), 0o755)
+		_ = os.WriteFile(filepath.Join(two, d, "homebox.db"), []byte(sqliteHeader), 0o644)
+	}
+	if _, err := findServerData(two); err == nil || !strings.Contains(err.Error(), "2 Homebox databases") {
+		t.Fatalf("expected ambiguity error, got %v", err)
+	}
+	// A Homebox Desktop backup is pointed at Restore instead.
+	p, st := testEnv(t)
+	seedData(t, p)
+	bdir, _, err := createBackup(p, st.Get(), "v", "manual", t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findServerData(bdir); err == nil || !strings.Contains(err.Error(), "Restore") {
+		t.Fatalf("expected a pointer to Restore, got %v", err)
+	}
+}
+
+func TestServerZipAndCustomDatabaseName(t *testing.T) {
+	parent, _ := makeServerFolder(t, "inventory.sqlite", "")
+	zipPath := filepath.Join(t.TempDir(), "homebox-data.zip")
+	zipFolder(t, parent, zipPath)
+	p, _ := testEnv(t)
+	sd, err := openServerZip(zipPath, p.TempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sd.DBName != "inventory.sqlite" {
+		t.Fatalf("db name %q", sd.DBName)
+	}
+	seedData(t, p)
+	safety, err := installServerData(p, sd, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := sd.Root
+	sd.Close()
+	if _, err := os.Stat(tmp); err == nil {
+		t.Fatal("temporary unzip folder should be removed")
+	}
+	// Renamed to homebox.db (with its WAL), attachments in place, secrets left behind.
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "homebox.db")); !strings.HasPrefix(string(b), sqliteHeader) {
+		t.Fatal("database not installed as homebox.db")
+	}
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "homebox.db-wal")); string(b) != "wal-bytes" {
+		t.Fatal("WAL not carried over")
+	}
+	for _, gone := range []string{".env", "homebox.db-shm", "Thumbs.db", "inventory.sqlite"} {
+		if _, err := os.Stat(filepath.Join(p.HomeboxData, gone)); err == nil {
+			t.Fatalf("%s should not be copied", gone)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf", "documents", "0a1b2c3d-1111-2222-3333-444455556666.jpg")); string(b) != "photo" {
+		t.Fatal("attachment not copied")
+	}
+	// The previous data is in the safety copy and can be put back.
+	if _, err := os.Stat(filepath.Join(safety, "attachments", "photos", "drill.jpg")); err != nil {
+		t.Fatal("safety copy missing previous data")
+	}
+	if err := putBackSafetyCopy(p, safety, filepath.Join(p.Base, "failed-imports", "x")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.HomeboxData, "attachments", "photos", "drill.jpg")); err != nil {
+		t.Fatal("previous data not put back")
+	}
+	if _, err := os.Stat(filepath.Join(p.Base, "failed-imports", "x", "homebox.db")); err != nil {
+		t.Fatal("imported copy should be kept aside")
+	}
+}
+
+// startTestApp runs the app logic (no window) on the stand-in engine, with
+// an existing account and some data.
+func startTestApp(t *testing.T) *App {
+	t.Helper()
+	p, st := testEnv(t)
+	buildFakeEngine(t, p)
+	a := &App{paths: p, settings: st}
+	a.engine = NewEngine(p, st)
+	a.gw = NewGateway(a.engine)
+	if _, err := a.gw.StartLocal(0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.gw.Shutdown)
+	if err := a.startEngine("Starting"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { a.stopWatch(); _ = a.engine.Stop() })
+	if err := engineRegister(a.engine.BaseURL(), "Sam", "owner@example.com", "pass1234"); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.SetCredentials("Sam", "owner@example.com", "pass1234")
+	a.afterEngineStart()
+	return a
+}
+
+func TestImportFromServerFlow(t *testing.T) {
+	a := startTestApp(t)
+	before, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "users.json"))
+	parent, _ := makeServerFolder(t, "homebox.db", "")
+	t.Setenv("HOMEBOX_DESKTOP_TEST_PICK", parent)
+	var asked string
+	toldCh := make(chan string, 4)
+	testDialogs = func(kind, title, msg string) bool {
+		if kind == "ask" {
+			asked = msg
+		} else {
+			toldCh <- title + ": " + msg
+		}
+		return true
+	}
+
+	a.importServer(false)
+	var told string
+	select { // the "Import complete" note is shown in the background
+	case told = <-toldCh:
+	case <-time.After(5 * time.Second):
+	}
+	testDialogs = nil
+
+	if !strings.Contains(asked, "Photos and documents: 2 files") || !strings.Contains(asked, "will be replaced") {
+		t.Fatalf("confirmation text:\n%s", asked)
+	}
+	if !strings.Contains(told, "Import complete") {
+		t.Fatalf("expected success, got %q", told)
+	}
+	if !a.engine.Running() || a.GetState().Phase != "signin" {
+		t.Fatalf("expected Homebox running and asking to sign in, got %+v", a.GetState())
+	}
+	if s := a.settings.Get(); s.AccountEmail != unknownAccount || s.SavedPassword != "" {
+		t.Fatalf("account details should be cleared: %+v", s)
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf", "documents", "9f8e7d6c-1111-2222-3333-444455556666.pdf")); string(b) != "receipt" {
+		t.Fatal("server attachments not imported")
+	}
+	// The original server folder is untouched.
+	if _, err := os.Stat(filepath.Join(parent, "homebox", "data", ".env")); err != nil {
+		t.Fatal("the server folder must not be changed")
+	}
+	// Previous data kept as a safety copy.
+	safeties, _ := os.ReadDir(a.paths.SafetyDir)
+	if len(safeties) != 1 || !strings.HasPrefix(safeties[0].Name(), "Before import") {
+		t.Fatalf("safety copy: %v", safeties)
+	}
+	if got, _ := os.ReadFile(filepath.Join(a.paths.SafetyDir, safeties[0].Name(), "users.json")); string(got) != string(before) {
+		t.Fatal("safety copy should hold the previous data")
+	}
+}
+
+func TestImportThatHomeboxCantOpenIsUndone(t *testing.T) {
+	a := startTestApp(t)
+	before, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "users.json"))
+	parent, _ := makeServerFolder(t, "homebox.db", "CORRUPT")
+	t.Setenv("HOMEBOX_DESKTOP_TEST_PICK", parent)
+	var failure string
+	testDialogs = func(kind, title, msg string) bool {
+		if kind == "fail" {
+			failure = title + ": " + msg
+		}
+		return true
+	}
+	defer func() { testDialogs = nil }()
+
+	a.importServer(false)
+
+	if !strings.Contains(failure, "Import undone") || !strings.Contains(failure, "previous data has been put back") {
+		t.Fatalf("expected the import to be undone, got %q", failure)
+	}
+	if got, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "users.json")); string(got) != string(before) {
+		t.Fatal("previous data was not put back")
+	}
+	if s := a.settings.Get(); s.AccountEmail != "owner@example.com" || a.settings.Password() != "pass1234" {
+		t.Fatalf("previous sign-in not restored: %+v", s)
+	}
+	if !a.engine.Running() || a.GetState().Phase != "ready" {
+		t.Fatalf("Homebox should be back to normal, got %+v", a.GetState())
+	}
+	if entries, _ := os.ReadDir(filepath.Join(a.paths.Base, "failed-imports")); len(entries) != 1 {
+		t.Fatal("the failed import should be kept aside for troubleshooting")
+	}
+}
