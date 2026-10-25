@@ -94,7 +94,7 @@ Homebox keeps everything in one data folder, which Docker mounts at `/data` insi
    - If it uses a named volume, such as `homebox-data:/data`, copy it out with `docker cp homebox:/data ./homebox-data`.
 3. **Copy the whole folder** to your Windows PC, for example on a USB drive or over your network. Zipping it first is fine.
 
-The folder contains `homebox.db` and one or more folders with long names (such as `78723c30-7e1c-...`) holding your photos and documents. Copy all of it.
+The folder contains `homebox.db` and one or more folders with long names (such as `5d2c9a41-3b7e-...`) holding your photos and documents. Copy all of it.
 
 ### 2. Import it into Homebox Desktop
 

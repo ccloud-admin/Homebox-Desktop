@@ -879,7 +879,7 @@ func makeServerFolder(t *testing.T, dbName, dbBody string) (parent, data string)
 	t.Helper()
 	parent = t.TempDir()
 	data = filepath.Join(parent, "homebox", "data")
-	gid := "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf"
+	gid := "5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93"
 	files := map[string]string{
 		dbName:          sqliteHeader + dbBody + " /data/" + gid + "/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg" + gid + " /data/" + gid + "/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf" + gid,
 		dbName + "-wal": "wal-bytes",
@@ -909,8 +909,8 @@ func TestFindServerData(t *testing.T) {
 	if sd.Root != data || sd.DBName != "homebox.db" {
 		t.Fatalf("wrong data folder: %+v", sd)
 	}
-	want := []string{"78723c30-7e1c-4e12-98e6-e3ef5b73f0bf/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg",
-		"78723c30-7e1c-4e12-98e6-e3ef5b73f0bf/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf", "homebox.db", "homebox.db-wal"}
+	want := []string{"5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93/documents/0a1b2c3d-1111-2222-3333-444455556666.jpg",
+		"5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93/documents/9f8e7d6c-1111-2222-3333-444455556666.pdf", "homebox.db", "homebox.db-wal"}
 	got := []string{}
 	for _, f := range sd.Files {
 		got = append(got, filepath.ToSlash(f))
@@ -926,7 +926,7 @@ func TestFindServerData(t *testing.T) {
 	}
 
 	// Without its photo folders, the missing files are noticed.
-	_ = os.RemoveAll(filepath.Join(data, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf"))
+	_ = os.RemoveAll(filepath.Join(data, "5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93"))
 	sd, _ = findServerData(data)
 	if sd.Documents != 0 || sd.Missing != 2 {
 		t.Fatalf("expected 2 missing, got %+v", sd)
@@ -997,7 +997,7 @@ func TestServerZipAndCustomDatabaseName(t *testing.T) {
 			t.Fatalf("%s should not be copied", gone)
 		}
 	}
-	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf", "documents", "0a1b2c3d-1111-2222-3333-444455556666.jpg")); string(b) != "photo" {
+	if b, _ := os.ReadFile(filepath.Join(p.HomeboxData, "5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93", "documents", "0a1b2c3d-1111-2222-3333-444455556666.jpg")); string(b) != "photo" {
 		t.Fatal("attachment not copied")
 	}
 	// The previous data is in the safety copy and can be put back.
@@ -1076,7 +1076,7 @@ func TestImportFromServerFlow(t *testing.T) {
 	if s := a.settings.Get(); s.AccountEmail != unknownAccount || s.SavedPassword != "" {
 		t.Fatalf("account details should be cleared: %+v", s)
 	}
-	if b, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "78723c30-7e1c-4e12-98e6-e3ef5b73f0bf", "documents", "9f8e7d6c-1111-2222-3333-444455556666.pdf")); string(b) != "receipt" {
+	if b, _ := os.ReadFile(filepath.Join(a.paths.HomeboxData, "5d2c9a41-3b7e-4f08-9c61-2a8e7f4b1d93", "documents", "9f8e7d6c-1111-2222-3333-444455556666.pdf")); string(b) != "receipt" {
 		t.Fatal("server attachments not imported")
 	}
 	// The original server folder is untouched.
